@@ -8,6 +8,8 @@ import (
 
 	"google.golang.org/grpc"
 
+	intpq "github.com/ydb-platform/ydb-go-sdk/v3/internal/persqueue"
+
 	"github.com/ydb-platform/ydb-go-sdk/v3/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 	"github.com/ydb-platform/ydb-go-sdk/v3/discovery"
@@ -33,12 +35,6 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/table"
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
 
-	coordinationConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/coordination/config"
-	discoveryConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/discovery/config"
-	ratelimiterConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/ratelimiter/config"
-	schemeConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/scheme/config"
-	scriptingConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/scripting/config"
-	tableConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/table/config"
 	persqueueConfig "github.com/ydb-platform/ydb-go-sdk/v3/persqueue/config"
 )
 
@@ -112,9 +108,11 @@ type connection struct {
 	ratelimiter        *internalRatelimiter.Client
 	ratelimiterOptions []ratelimiterConfig.Option
 
-	pool *conn.Pool
-	persqueue        *lazy.LazyPersqueue
+	persqueueOnce    sync.Once
+	persqueue        *intpq.Client
 	persqueueOptions []persqueueConfig.Option
+
+	pool *conn.Pool
 
 	mtx    sync.Mutex
 	router router.Connection
@@ -180,6 +178,13 @@ func (c *connection) Close(ctx context.Context) error {
 				return nil
 			}
 			return c.table.Close(ctx)
+		},
+		func(ctx context.Context) error {
+			c.persqueueOnce.Do(func() {})
+			if c.persqueue == nil {
+				return nil
+			}
+			return c.persqueue.Close(ctx)
 		},
 		c.router.Close,
 		c.pool.Release,
@@ -341,7 +346,10 @@ func (c *connection) Scripting() scripting.Client {
 }
 
 func (c *connection) Persqueue() persqueue.Client {
-	return c.persqueue.Client()
+	c.persqueueOnce.Do(func() {
+		c.persqueue = intpq.New(c.router, c.persqueueOptions)
+	})
+	return c.persqueue
 }
 
 // Open connects to database by DSN and return driver runtime holder
@@ -432,17 +440,6 @@ func open(ctx context.Context, opts ...Option) (_ Connection, err error) {
 	if err != nil {
 		return nil, xerrors.WithStackTrace(err)
 	}
-
-	c.persqueue = lazy.Persqueue(
-		c.db, // prepend config params from root config
-		append(
-			[]persqueueConfig.Option{
-				persqueueConfig.WithOperationTimeout(c.config.OperationTimeout()),
-				persqueueConfig.WithOperationCancelAfter(c.config.OperationCancelAfter()),
-			},
-			c.persqueueOptions...,
-		),
-	)
 
 	return c, nil
 }
