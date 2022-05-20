@@ -6,11 +6,6 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/scheme"
 )
 
-// ReadSendMessage is group of types sutable for send to ReadStream.Send
-type ReadSendMessage interface {
-	isReadRequest()
-}
-
 type ReadInitRequest struct {
 	readSendMark
 

@@ -3,6 +3,8 @@ package persqueue
 import (
 	"context"
 	"time"
+
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/backoff"
 )
 
 type Writer struct {
@@ -29,6 +31,30 @@ func WithAsyncFlushSize(size int) writerOption {
 }
 
 func WithAsyncFlushInterval(interval time.Duration) writerOption {
+	panic("not implemented")
+}
+
+func WithCodec(codec Codec) writerOption {
+	panic("not implemented")
+}
+
+func WithRetrier(retrier backoff.Backoff) writerOption {
+	panic("not implemented")
+}
+
+func WithSessionMetadata(meta map[string]string) writerOption {
+	panic("not implemented")
+}
+
+func WithInflightMemoryLimit(size int) writerOption {
+	panic("not implemented")
+}
+
+func WithInflightCountLimit(count int) writerOption {
+	panic("not implemented")
+}
+
+func WithSeqnoValidation(enabled bool) writerOption {
 	panic("not implemented")
 }
 

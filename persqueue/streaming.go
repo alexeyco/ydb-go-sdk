@@ -13,13 +13,6 @@ type WriteClient interface {
 	WriteStream(context.Context) WriteStream
 }
 
-type ReadStream interface {
-	Send(ReadSendMessage) error
-	Recv() (ReadRecvMessage, error)
-	CloseSend() error
-	Close() error
-}
-
 type WriteStream interface {
 	Send(WriteSendMessage) error
 	Recv() (WriteRecvMessage, error)
