@@ -26,7 +26,7 @@ func MarshalInterval(d time.Duration) int64 {
 	return int64(d)
 }
 
-// Up to 11761191-01-20 00:00:00 +0000 UTC.
+// UnmarshalDate up to 11761191-01-20 00:00:00 +0000 UTC.
 func UnmarshalDate(n uint32) time.Time {
 	return time.Unix(int64(n)*secondsPerDay, 0)
 }

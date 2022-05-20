@@ -3,6 +3,7 @@ package table
 import (
 	"container/list"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -10,10 +11,11 @@ import (
 	"google.golang.org/grpc"
 	grpcCodes "google.golang.org/grpc/codes"
 
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/router"
+
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/backoff"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/cluster"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/deadline"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/table/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
@@ -24,52 +26,44 @@ import (
 )
 
 var (
-	// errSessionPoolClosed returned by a client instance to indicate
-	// that client is closed and not able to complete requested operation.
-	errSessionPoolClosed = xerrors.Wrap(fmt.Errorf("session pool is closed"))
+	errNilClient = xerrors.Wrap(errors.New("table client is not initialized"))
 
-	// errSessionPoolOverflow returned by a client instance to indicate
-	// that the client is full and requested operation is not able to complete.
-	errSessionPoolOverflow = xerrors.Wrap(fmt.Errorf("session pool overflow"))
+	// errClosedClient returned by a Client instance to indicate
+	// that Client is closed early and not able to complete requested operation.
+	errClosedClient = xerrors.Wrap(errors.New("table client closed early"))
 
-	// errSessionShutdown returned by a client instance to indicate that
+	// errSessionPoolOverflow returned by a Client instance to indicate
+	// that the Client is full and requested operation is not able to complete.
+	errSessionPoolOverflow = xerrors.Wrap(errors.New("session pool overflow"))
+
+	// errSessionShutdown returned by a Client instance to indicate that
 	// requested session is under shutdown.
-	errSessionShutdown = xerrors.Wrap(fmt.Errorf("session under shutdown"))
+	errSessionShutdown = xerrors.Wrap(errors.New("session under shutdown"))
 
-	// errNoProgress returned by a client instance to indicate that
+	// errNoProgress returned by a Client instance to indicate that
 	// operation could not be completed.
-	errNoProgress = xerrors.Wrap(fmt.Errorf("no progress"))
+	errNoProgress = xerrors.Wrap(errors.New("no progress"))
 )
 
 // SessionBuilder is the interface that holds logic of creating sessions.
 type SessionBuilder func(context.Context) (Session, error)
 
-type Client interface {
-	table.Client
-
-	Get(ctx context.Context) (s Session, err error)
-	Put(ctx context.Context, s Session) (err error)
-	CloseSession(ctx context.Context, s Session) (err error)
-}
-
-func New(ctx context.Context, cc grpc.ClientConnInterface, opts ...config.Option) Client {
-	config := config.New(opts...)
-	return newClient(ctx, cc, nil, config)
+func New(cc grpc.ClientConnInterface, config config.Config) *Client {
+	return newClient(cc, func(ctx context.Context) (s Session, err error) {
+		return newSession(ctx, cc, config)
+	}, config)
 }
 
 func newClient(
-	ctx context.Context,
 	cc grpc.ClientConnInterface,
 	builder SessionBuilder,
 	config config.Config,
-) *client {
-	onDone := trace.TableOnInit(config.Trace(), &ctx)
-	if builder == nil {
-		builder = func(ctx context.Context) (s Session, err error) {
-			return newSession(ctx, cc, config)
-		}
-	}
-	c := &client{
+) *Client {
+	var (
+		ctx    = context.Background()
+		onDone = trace.TableOnInit(config.Trace(), &ctx)
+	)
+	c := &Client{
 		config: config,
 		cc:     cc,
 		build:  builder,
@@ -93,9 +87,9 @@ func newClient(
 	return c
 }
 
-// client is a set of session instances that may be reused.
-// A client is safe for use by multiple goroutines simultaneously.
-type client struct {
+// Client is a set of session instances that may be reused.
+// A Client is safe for use by multiple goroutines simultaneously.
+type Client struct {
 	// build holds an object capable for creating sessions.
 	// It must not be nil.
 	build             SessionBuilder
@@ -103,7 +97,7 @@ type client struct {
 	config            config.Config
 	index             map[Session]sessionInfo
 	createInProgress  int           // KIKIMR-9163: in-create-process counter
-	limit             int           // Upper bound for client size.
+	limit             int           // Upper bound for Client size.
 	idle              *list.List    // list<table.session>
 	waitq             *list.List    // list<*chan table.session>
 	keeperWake        chan struct{} // Set by keeper.
@@ -118,12 +112,16 @@ type client struct {
 	closed            bool
 }
 
-func (c *client) CreateSession(ctx context.Context, opts ...table.Option) (table.ClosableSession, error) {
-	var (
-		s       Session
-		err     error
-		options = retryOptions(c.config.Trace(), opts...)
-	)
+func (c *Client) CreateSession(ctx context.Context, opts ...table.Option) (_ table.ClosableSession, err error) {
+	if c == nil {
+		return nil, xerrors.WithStackTrace(errNilClient)
+	}
+	var s Session
+	if !c.config.AutoRetry() {
+		s, err = c.build(ctx)
+		return s, xerrors.WithStackTrace(err)
+	}
+	options := retryOptions(c.config.Trace(), opts...)
 	err = retry.Retry(
 		ctx,
 		func(ctx context.Context) (err error) {
@@ -149,7 +147,7 @@ func (c *client) CreateSession(ctx context.Context, opts ...table.Option) (table
 	return s, xerrors.WithStackTrace(err)
 }
 
-func (c *client) isClosed() bool {
+func (c *Client) isClosed() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closed
@@ -188,8 +186,8 @@ type createSessionResult struct {
 }
 
 // p.mu must NOT be held.
-func (c *client) createSession(ctx context.Context) (s Session, err error) {
-	// pre-check the client size
+func (c *Client) createSession(ctx context.Context) (s Session, err error) {
+	// pre-check the Client size
 	c.mu.Lock()
 	enoughSpace := c.createInProgress+len(c.index) < c.limit
 	if enoughSpace {
@@ -272,7 +270,7 @@ func (c *client) createSession(ctx context.Context) (s Session, err error) {
 	select {
 	case r := <-resCh:
 		if r.s == nil && r.err == nil {
-			panic("ydb: abnormal result of client.createSession()")
+			panic("ydb: abnormal result of createSession()")
 		}
 		return r.s, xerrors.WithStackTrace(r.err)
 	case <-ctx.Done():
@@ -298,7 +296,7 @@ func withTrace(t trace.Table) getOption {
 	}
 }
 
-func (c *client) get(ctx context.Context, opts ...getOption) (s Session, err error) {
+func (c *Client) get(ctx context.Context, opts ...getOption) (s Session, err error) {
 	var (
 		i = 0
 		o = getOptions{t: c.config.Trace()}
@@ -315,7 +313,7 @@ func (c *client) get(ctx context.Context, opts ...getOption) (s Session, err err
 	const maxAttempts = 100
 	for ; s == nil && err == nil && i < maxAttempts; i++ {
 		if c.isClosed() {
-			return nil, xerrors.WithStackTrace(errSessionPoolClosed)
+			return nil, xerrors.WithStackTrace(errClosedClient)
 		}
 
 		// First, we try to get session from idle
@@ -337,7 +335,7 @@ func (c *client) get(ctx context.Context, opts ...getOption) (s Session, err err
 			return s, xerrors.WithStackTrace(err)
 		}
 
-		// Third, we try to wait for a touched session - client is full.
+		// Third, we try to wait for a touched session - Client is full.
 		//
 		// This should be done only if number of currently waiting goroutines
 		// are less than maximum amount of touched session. That is, we want to
@@ -359,13 +357,13 @@ func (c *client) get(ctx context.Context, opts ...getOption) (s Session, err err
 	return s, nil
 }
 
-// Get returns first idle session from the client and removes it from
-// there. If no items stored in client it creates new one returns it.
-func (c *client) Get(ctx context.Context) (s Session, err error) {
+// Get returns first idle session from the Client and removes it from
+// there. If no items stored in Client it creates new one returns it.
+func (c *Client) Get(ctx context.Context) (s Session, err error) {
 	return c.get(ctx)
 }
 
-func (c *client) waitFromCh(ctx context.Context, t trace.Table) (s Session, err error) {
+func (c *Client) waitFromCh(ctx context.Context, t trace.Table) (s Session, err error) {
 	var (
 		ch *chan Session
 		el *list.Element // Element in the wait queue.
@@ -392,7 +390,7 @@ func (c *client) waitFromCh(ctx context.Context, t trace.Table) (s Session, err 
 		// The same way will work when some session become deleted - the
 		// nil value will be sent into the channel.
 		if ok {
-			// Put only filled and not closed channel back to the client.
+			// Put only filled and not closed channel back to the Client.
 			// That is, we need to avoid races on filling reused channel
 			// for the next waiter – session could be lost for a long time.
 			c.putWaitCh(ch)
@@ -413,16 +411,16 @@ func (c *client) waitFromCh(ctx context.Context, t trace.Table) (s Session, err 
 	}
 }
 
-// Put returns session to the client for further reuse.
-// If client is already closed Put() calls s.Close(ctx) and returns
-// errSessionPoolClosed.
-// If client is overflow calls s.Close(ctx) and returns
+// Put returns session to the Client for further reuse.
+// If Client is already closed Put() calls s.Close(ctx) and returns
+// errClosedClient.
+// If Client is overflow calls s.Close(ctx) and returns
 // errSessionPoolOverflow.
 //
 // Note that Put() must be called only once after being created or received by
 // Get() or Take() calls. In other way it will produce unexpected behavior or
 // panic.
-func (c *client) Put(ctx context.Context, s Session) (err error) {
+func (c *Client) Put(ctx context.Context, s Session) (err error) {
 	onDone := trace.TableOnPoolPut(c.config.Trace(), &ctx, s)
 	defer func() {
 		onDone(err)
@@ -432,7 +430,7 @@ func (c *client) Put(ctx context.Context, s Session) (err error) {
 
 	switch {
 	case c.closed:
-		err = xerrors.WithStackTrace(errSessionPoolClosed)
+		err = xerrors.WithStackTrace(errClosedClient)
 
 	case c.idle.Len() >= c.limit:
 		err = xerrors.WithStackTrace(errSessionPoolOverflow)
@@ -462,18 +460,22 @@ func (c *client) Put(ctx context.Context, s Session) (err error) {
 	return xerrors.WithStackTrace(err)
 }
 
-// Close deletes all stored sessions inside client.
+// Close deletes all stored sessions inside Client.
 // It also stops all underlying timers and goroutines.
 // It returns first error occurred during stale sessions' deletion.
 // Note that even on error it calls Close() on each session.
-func (c *client) Close(ctx context.Context) (err error) {
+func (c *Client) Close(ctx context.Context) (err error) {
+	if c == nil {
+		return xerrors.WithStackTrace(errNilClient)
+	}
+
 	onDone := trace.TableOnClose(c.config.Trace(), &ctx)
 	defer func() {
 		onDone(err)
 	}()
 
 	if c.isClosed() {
-		return
+		return xerrors.WithStackTrace(errClosedClient)
 	}
 
 	c.mu.Lock()
@@ -538,9 +540,12 @@ func retryOptions(trace trace.Table, opts ...table.Option) table.Options {
 // - deadline was canceled or deadlined
 // - retry operation returned nil as error
 // Warning: if deadline without deadline or cancellation func Retry will be worked infinite
-func (c *client) Do(ctx context.Context, op table.Operation, opts ...table.Option) (err error) {
+func (c *Client) Do(ctx context.Context, op table.Operation, opts ...table.Option) (err error) {
+	if c == nil {
+		return xerrors.WithStackTrace(errNilClient)
+	}
 	if c.isClosed() {
-		return xerrors.WithStackTrace(errSessionPoolClosed)
+		return xerrors.WithStackTrace(errClosedClient)
 	}
 	opts = append(opts, table.WithTrace(c.config.Trace()))
 	return do(
@@ -552,9 +557,12 @@ func (c *client) Do(ctx context.Context, op table.Operation, opts ...table.Optio
 	)
 }
 
-func (c *client) DoTx(ctx context.Context, op table.TxOperation, opts ...table.Option) (err error) {
+func (c *Client) DoTx(ctx context.Context, op table.TxOperation, opts ...table.Option) (err error) {
+	if c == nil {
+		return xerrors.WithStackTrace(errNilClient)
+	}
 	if c.isClosed() {
-		return xerrors.WithStackTrace(errSessionPoolClosed)
+		return xerrors.WithStackTrace(errClosedClient)
 	}
 	return doTx(
 		ctx,
@@ -565,7 +573,7 @@ func (c *client) DoTx(ctx context.Context, op table.TxOperation, opts ...table.O
 	)
 }
 
-func (c *client) keeper(ctx context.Context) {
+func (c *Client) keeper(ctx context.Context) {
 	defer close(c.keeperDone)
 	var (
 		toTouch    []Session // Cached for reuse.
@@ -638,8 +646,7 @@ func (c *client) keeper(ctx context.Context) {
 					case
 						xerrors.Is(
 							err,
-							cluster.ErrClusterClosed,
-							cluster.ErrClusterEmpty,
+							router.ErrClusterEmpty,
 						),
 						xerrors.IsOperationError(err, Ydb.StatusIds_BAD_SESSION),
 						xerrors.IsTransportError(
@@ -725,7 +732,7 @@ func (c *client) keeper(ctx context.Context) {
 // Note that returning a pointer reduces allocations on sync.Pool usage –
 // sync.Client.Get() returns empty interface, which leads to allocation for
 // non-pointer values.
-func (c *client) getWaitCh() *chan Session {
+func (c *Client) getWaitCh() *chan Session {
 	if c.testHookGetWaitCh != nil {
 		c.testHookGetWaitCh()
 	}
@@ -741,12 +748,12 @@ func (c *client) getWaitCh() *chan Session {
 // use.
 // Note that ch MUST NOT be owned by any goroutine at the call moment and ch
 // MUST NOT contain any value.
-func (c *client) putWaitCh(ch *chan Session) {
+func (c *Client) putWaitCh(ch *chan Session) {
 	c.waitChPool.Put(ch)
 }
 
 // p.mu must be held.
-func (c *client) peekFirstIdle() (s Session, touched time.Time) {
+func (c *Client) peekFirstIdle() (s Session, touched time.Time) {
 	el := c.idle.Front()
 	if el == nil {
 		return
@@ -763,7 +770,7 @@ func (c *client) peekFirstIdle() (s Session, touched time.Time) {
 // to prevent session from dying in the keeper after it was returned
 // to be used only in outgoing functions that make session busy.
 // p.mu must be held.
-func (c *client) removeFirstIdle() Session {
+func (c *Client) removeFirstIdle() Session {
 	s, _ := c.peekFirstIdle()
 	if s != nil {
 		info := c.removeIdle(s)
@@ -777,7 +784,7 @@ func (c *client) removeFirstIdle() Session {
 // Unlike other info modifiers, this one doesn't care if it didn't find the session, it skips
 // the action. You can still check it later if needed, if the return code is -1
 // p.mu must be held.
-func (c *client) incrementKeepAlive(s Session) int {
+func (c *Client) incrementKeepAlive(s Session) int {
 	info, has := c.index[s]
 	if !has {
 		return -1
@@ -789,7 +796,7 @@ func (c *client) incrementKeepAlive(s Session) int {
 }
 
 // p.mu must be held.
-func (c *client) touchCond() <-chan struct{} {
+func (c *Client) touchCond() <-chan struct{} {
 	if c.touchingDone == nil {
 		c.touchingDone = make(chan struct{})
 	}
@@ -797,7 +804,7 @@ func (c *client) touchCond() <-chan struct{} {
 }
 
 // p.mu must be held.
-func (c *client) notify(s Session) (notified bool) {
+func (c *Client) notify(s Session) (notified bool) {
 	for el := c.waitq.Front(); el != nil; el = c.waitq.Front() {
 		// Some goroutine is waiting for a session.
 		//
@@ -828,7 +835,7 @@ func (c *client) notify(s Session) (notified bool) {
 // CloseSession provides the most effective way of session closing
 // instead of plain session.Close().
 // CloseSession must be fast. If necessary, can be async.
-func (c *client) CloseSession(ctx context.Context, s Session) error {
+func (c *Client) CloseSession(ctx context.Context, s Session) error {
 	return c.closeSession(
 		ctx,
 		s,
@@ -865,7 +872,7 @@ func withCloseSessionTrace() closeSessionOption {
 }
 
 // closeSession is an async func which close session, but without `trace.OnPoolSessionClose` tracing
-func (c *client) closeSession(ctx context.Context, s Session, opts ...closeSessionOption) error {
+func (c *Client) closeSession(ctx context.Context, s Session, opts ...closeSessionOption) error {
 	h := closeSessionOptionsHolder{}
 
 	for _, o := range opts {
@@ -906,7 +913,7 @@ func (c *client) closeSession(ctx context.Context, s Session, opts ...closeSessi
 	return nil
 }
 
-func (c *client) keepAliveSession(ctx context.Context, s Session) (err error) {
+func (c *Client) keepAliveSession(ctx context.Context, s Session) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, c.config.KeepAliveTimeout())
 	defer cancel()
 	err = s.KeepAlive(ctx)
@@ -917,7 +924,7 @@ func (c *client) keepAliveSession(ctx context.Context, s Session) (err error) {
 }
 
 // p.mu must be held.
-func (c *client) removeIdle(s Session) sessionInfo {
+func (c *Client) removeIdle(s Session) sessionInfo {
 	info, has := c.index[s]
 	if !has || info.idle == nil {
 		panicLocked(&c.mu, "inconsistent session client index")
@@ -930,12 +937,12 @@ func (c *client) removeIdle(s Session) sessionInfo {
 }
 
 // p.mu must be held.
-func (c *client) pushIdle(s Session, now time.Time) {
+func (c *Client) pushIdle(s Session, now time.Time) {
 	c.handlePushIdle(s, now, c.idle.PushBack(s))
 }
 
 // p.mu must be held.
-func (c *client) pushIdleInOrder(s Session, now time.Time) (el *list.Element) {
+func (c *Client) pushIdleInOrder(s Session, now time.Time) (el *list.Element) {
 	var prev *list.Element
 	for prev = c.idle.Back(); prev != nil; prev = prev.Prev() {
 		s := prev.Value.(Session)
@@ -954,7 +961,7 @@ func (c *client) pushIdleInOrder(s Session, now time.Time) (el *list.Element) {
 }
 
 // p.mu must be held.
-func (c *client) pushIdleInOrderAfter(s Session, now time.Time, mark *list.Element) *list.Element {
+func (c *Client) pushIdleInOrderAfter(s Session, now time.Time, mark *list.Element) *list.Element {
 	if mark != nil {
 		n := c.idle.Len()
 		el := c.idle.InsertAfter(s, mark)
@@ -968,7 +975,7 @@ func (c *client) pushIdleInOrderAfter(s Session, now time.Time, mark *list.Eleme
 }
 
 // p.mu must be held.
-func (c *client) handlePushIdle(s Session, now time.Time, el *list.Element) {
+func (c *Client) handlePushIdle(s Session, now time.Time, el *list.Element) {
 	info, has := c.index[s]
 	if !has {
 		panicLocked(&c.mu, "trying to store session created outside of the client")
@@ -985,7 +992,7 @@ func (c *client) handlePushIdle(s Session, now time.Time, el *list.Element) {
 }
 
 // p.mu must be held.
-func (c *client) wakeUpKeeper() {
+func (c *Client) wakeUpKeeper() {
 	if wake := c.keeperWake; wake != nil {
 		c.keeperWake = nil
 		close(wake)

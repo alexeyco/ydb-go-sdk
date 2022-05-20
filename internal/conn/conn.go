@@ -3,9 +3,7 @@ package conn
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
@@ -40,8 +38,7 @@ type Conn interface {
 	IsState(states ...State) bool
 	GetState() State
 	SetState(State) State
-
-	Release(ctx context.Context) error
+	Unban() State
 }
 
 func (c *conn) Address() string {
@@ -49,17 +46,15 @@ func (c *conn) Address() string {
 }
 
 type conn struct {
-	mtx          sync.RWMutex
-	config       Config // ro access
-	cc           *grpc.ClientConn
-	done         chan struct{}
-	endpoint     endpoint.Endpoint // ro access
-	closed       bool
-	state        State
-	usages       int32
-	streamUsages int32
-	lastUsage    time.Time
-	onClose      []func(*conn)
+	mtx       sync.RWMutex
+	config    Config // ro access
+	cc        *grpc.ClientConn
+	done      chan struct{}
+	endpoint  endpoint.Endpoint // ro access
+	closed    bool
+	state     State
+	lastUsage time.Time
+	onClose   []func(*conn)
 }
 
 func (c *conn) Ping(ctx context.Context) error {
@@ -73,39 +68,7 @@ func (c *conn) Ping(ctx context.Context) error {
 	return nil
 }
 
-func (c *conn) Release(ctx context.Context) (err error) {
-	var (
-		onDone = trace.DriverOnConnRelease(
-			c.config.Trace(),
-			&ctx,
-			c.endpoint.Copy(),
-		)
-		issues []error
-	)
-	defer func() {
-		onDone(err)
-	}()
-
-	if c.changeUsages(-1) == 0 {
-		if usages := atomic.LoadInt32(&c.streamUsages); usages > 0 {
-			issues = append(issues, fmt.Errorf("conn in stream use: usages=%d", usages))
-		}
-		if closeErr := c.Close(ctx); closeErr != nil {
-			issues = append(issues, closeErr)
-		}
-	}
-
-	if len(issues) > 0 {
-		return xerrors.WithStackTrace(xerrors.NewWithIssues("conn released with issues", issues...))
-	}
-
-	return nil
-}
-
 func (c *conn) LastUsage() time.Time {
-	if usages := atomic.LoadInt32(&c.streamUsages); usages > 0 {
-		return time.Now()
-	}
 	c.mtx.RLock()
 	defer c.mtx.RUnlock()
 	return c.lastUsage
@@ -171,6 +134,7 @@ func (c *conn) Endpoint() endpoint.Endpoint {
 func (c *conn) SetState(s State) State {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
+
 	return c.setState(s)
 }
 
@@ -182,6 +146,21 @@ func (c *conn) setState(s State) State {
 	)(s)
 	c.state = s
 	return c.state
+}
+
+func (c *conn) Unban() State {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	var newState State
+	if isAvailable(c.cc) {
+		newState = Online
+	} else {
+		newState = Offline
+	}
+
+	c.setState(newState)
+	return newState
 }
 
 func (c *conn) GetState() (s State) {
@@ -208,11 +187,9 @@ func (c *conn) take(ctx context.Context) (cc *grpc.ClientConn, err error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	if !isBroken(c.cc) {
+	if c.cc != nil {
 		return c.cc, nil
 	}
-
-	_ = c.close()
 
 	if dialTimeout := c.config.DialTimeout(); dialTimeout > 0 {
 		var cancel context.CancelFunc
@@ -221,7 +198,7 @@ func (c *conn) take(ctx context.Context) (cc *grpc.ClientConn, err error) {
 	}
 
 	// prepend "ydb" scheme for grpc dns-xresolver to find the proper scheme
-	/// ydb:///", three slashes is ok. It need for good parse scheme in grpc resolver.
+	// "ydb:///", three slashes is ok. It needs for good parse scheme in grpc resolver.
 	address := "ydb:///" + c.endpoint.Address()
 
 	cc, err = grpc.DialContext(ctx, address, c.config.GrpcDialOptions()...)
@@ -239,48 +216,6 @@ func (c *conn) touchLastUsage() {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	c.lastUsage = time.Now()
-}
-
-func (c *conn) changeUsages(delta int32) int32 {
-	defer c.touchLastUsage()
-
-	usages := atomic.AddInt32(&c.usages, delta)
-
-	if usages < 0 {
-		panic("negative usages: " + strconv.Itoa(int(usages)))
-	}
-
-	trace.DriverOnConnUsagesChange(
-		c.config.Trace(),
-		c.endpoint.Copy(),
-		int(usages),
-	)
-
-	return usages
-}
-
-func (c *conn) changeStreamUsages(delta int32) {
-	defer c.touchLastUsage()
-
-	usages := atomic.AddInt32(&c.streamUsages, delta)
-
-	if usages < 0 {
-		panic("negative stream usages: " + strconv.Itoa(int(usages)))
-	}
-
-	trace.DriverOnConnStreamUsagesChange(
-		c.config.Trace(),
-		c.endpoint.Copy(),
-		int(usages),
-	)
-}
-
-func isBroken(raw *grpc.ClientConn) bool {
-	if raw == nil {
-		return true
-	}
-	s := raw.GetState()
-	return s == connectivity.Shutdown || s == connectivity.TransientFailure
 }
 
 func isAvailable(raw *grpc.ClientConn) bool {
@@ -363,8 +298,8 @@ func (c *conn) Invoke(
 		return xerrors.WithStackTrace(err)
 	}
 
-	c.changeUsages(1)
-	defer c.changeUsages(-1)
+	c.touchLastUsage()
+	defer c.touchLastUsage()
 
 	err = cc.Invoke(ctx, method, req, res, opts...)
 
@@ -443,8 +378,8 @@ func (c *conn) NewStream(
 		return nil, xerrors.WithStackTrace(err)
 	}
 
-	c.changeStreamUsages(1)
-	defer c.changeStreamUsages(-1)
+	c.touchLastUsage()
+	defer c.touchLastUsage()
 
 	s, err = cc.NewStream(ctx, desc, method, opts...)
 
@@ -483,7 +418,6 @@ func withOnClose(onClose func(*conn)) option {
 
 func newConn(e endpoint.Endpoint, config Config, opts ...option) *conn {
 	c := &conn{
-		usages:   1,
 		state:    Created,
 		endpoint: e,
 		config:   config,

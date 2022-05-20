@@ -53,7 +53,6 @@ jobs:
       GO: ${{ matrix.go-version }}
       YDB_CONNECTION_STRING: grpcs://localhost:2135/?database=/local
       YDB_SSL_ROOT_CERTIFICATES_FILE: /tmp/ydb_certs/ca.pem
-      YDB_ANONYMOUS_CREDENTIALS: 1
       YDB_SHUTDOWN_URLS: http://localhost:8765/actors/kqp_proxy?force_shutdown=all
       HIDE_APPLICATION_OUTPUT: 1
     runs-on: ${{ matrix.os }}
@@ -67,7 +66,7 @@ jobs:
       - name: Wait database available
         run: bash ./.github/scripts/wait-ydb-container.sh
       - name: Test
-        run: go test -race -coverpkg=./... -coverprofile table.txt -covermode atomic ./test/table_test.go
+        run: go test -race -coverpkg=./... -coverprofile table.txt -covermode atomic ./table/table_e2e_test.go
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         with:
@@ -97,7 +96,6 @@ jobs:
       GO: ${{ matrix.go-version }}
       YDB_CONNECTION_STRING: grpcs://localhost:2135/?database=/local
       YDB_SSL_ROOT_CERTIFICATES_FILE: /tmp/ydb_certs/ca.pem
-      YDB_ANONYMOUS_CREDENTIALS: 1
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
@@ -109,7 +107,7 @@ jobs:
       - name: Wait database available
         run: bash ./.github/scripts/wait-ydb-container.sh
       - name: Test
-        run: go test -race -coverpkg=./... -coverprofile ratelimiter.txt -covermode atomic ./test/ratelimiter_test.go
+        run: go test -race -coverpkg=./... -coverprofile ratelimiter.txt -covermode atomic ./ratelimiter/ratelimiter_e2e_test.go
         shell: bash
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
@@ -140,7 +138,6 @@ jobs:
       GO: ${{ matrix.go-version }}
       YDB_CONNECTION_STRING: grpcs://localhost:2135/?database=/local
       YDB_SSL_ROOT_CERTIFICATES_FILE: /tmp/ydb_certs/ca.pem
-      YDB_ANONYMOUS_CREDENTIALS: 1
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
@@ -152,7 +149,7 @@ jobs:
       - name: Wait database available
         run: bash ./.github/scripts/wait-ydb-container.sh
       - name: Test
-        run: go test -race -coverpkg=./... -coverprofile scripting.txt -covermode atomic ./test/scripting_test.go
+        run: go test -race -coverpkg=./... -coverprofile scripting.txt -covermode atomic ./scripting/scripting_e2e_test.go
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         with:
@@ -182,7 +179,6 @@ jobs:
       GO: ${{ matrix.go-version }}
       YDB_CONNECTION_STRING: grpcs://localhost:2135/?database=/local
       YDB_SSL_ROOT_CERTIFICATES_FILE: /tmp/ydb_certs/ca.pem
-      YDB_ANONYMOUS_CREDENTIALS: 1
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
@@ -194,7 +190,7 @@ jobs:
       - name: Wait database available
         run: bash ./.github/scripts/wait-ydb-container.sh
       - name: Test
-        run: go test -race -coverpkg=./... -coverprofile discovery.txt -covermode atomic ./test/discovery_test.go
+        run: go test -race -coverpkg=./... -coverprofile discovery.txt -covermode atomic ./discovery/discovery_e2e_test.go
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         with:
@@ -224,7 +220,6 @@ jobs:
       GO: ${{ matrix.go-version }}
       YDB_CONNECTION_STRING: grpcs://localhost:2135/?database=/local
       YDB_SSL_ROOT_CERTIFICATES_FILE: /tmp/ydb_certs/ca.pem
-      YDB_ANONYMOUS_CREDENTIALS: 1
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
@@ -236,7 +231,7 @@ jobs:
       - name: Wait database available
         run: bash ./.github/scripts/wait-ydb-container.sh
       - name: Test
-        run: go test -race -coverpkg=./... -coverprofile connection.txt -covermode atomic ./test/connection_test.go
+        run: go test -race -coverpkg=./... -coverprofile connection.txt -covermode atomic ./connection_e2e_test.go
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         with:

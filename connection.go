@@ -11,10 +11,19 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 	"github.com/ydb-platform/ydb-go-sdk/v3/discovery"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer/single"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/conn"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/database"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/lazy"
+	internalCoordination "github.com/ydb-platform/ydb-go-sdk/v3/internal/coordination"
+	coordinationConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/coordination/config"
+	discoveryConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/discovery/config"
+	internalRatelimiter "github.com/ydb-platform/ydb-go-sdk/v3/internal/ratelimiter"
+	ratelimiterConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/ratelimiter/config"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/router"
+	internalScheme "github.com/ydb-platform/ydb-go-sdk/v3/internal/scheme"
+	schemeConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/scheme/config"
+	internalScripting "github.com/ydb-platform/ydb-go-sdk/v3/internal/scripting"
+	scriptingConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/scripting/config"
+	internalTable "github.com/ydb-platform/ydb-go-sdk/v3/internal/table"
+	tableConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/table/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
 	"github.com/ydb-platform/ydb-go-sdk/v3/log"
 	"github.com/ydb-platform/ydb-go-sdk/v3/persqueue"
@@ -39,8 +48,6 @@ import (
 // This interface is central part for access to various systems
 // embedded to ydb through one configured connection method.
 type Connection interface {
-	grpc.ClientConnInterface
-
 	// Endpoint returns initial endpoint
 	Endpoint() string
 
@@ -50,52 +57,67 @@ type Connection interface {
 	// Secure returns true if database connection is secure
 	Secure() bool
 
+	// Close closes connection and clear resources
 	Close(ctx context.Context) error
 
-	// Method for accessing subsystems
+	// Table returns table client
 	Table() table.Client
+
+	// Scheme returns scheme client
 	Scheme() scheme.Client
+
+	// Coordination returns coordination client
 	Coordination() coordination.Client
+
+	// Ratelimiter returns ratelimiter client
 	Ratelimiter() ratelimiter.Client
+
+	// Discovery returns discovery client
 	Discovery() discovery.Client
+
+	// Scripting returns scripting client
 	Scripting() scripting.Client
 	Persqueue() persqueue.Client
 
-	// With returns Connection specified with custom options
-	// Options provide options replacement for all clients taked from new Connection
+	// With makes child connection with the same options and another options
 	With(ctx context.Context, opts ...Option) (Connection, error)
 }
 
+// nolint: maligned
 type connection struct {
 	opts []Option
 
 	config  config.Config
 	options []config.Option
 
-	table        table.Client
+	tableOnce    sync.Once
+	table        *internalTable.Client
 	tableOptions []tableConfig.Option
 
-	scripting        scripting.Client
+	scriptingOnce    sync.Once
+	scripting        *internalScripting.Client
 	scriptingOptions []scriptingConfig.Option
 
-	scheme        scheme.Client
+	schemeOnce    sync.Once
+	scheme        *internalScheme.Client
 	schemeOptions []schemeConfig.Option
 
 	discoveryOptions []discoveryConfig.Option
 
-	coordination        coordination.Client
+	coordinationOnce    sync.Once
+	coordination        *internalCoordination.Client
 	coordinationOptions []coordinationConfig.Option
 
-	ratelimiter        ratelimiter.Client
+	ratelimiterOnce    sync.Once
+	ratelimiter        *internalRatelimiter.Client
 	ratelimiterOptions []ratelimiterConfig.Option
 
+	pool *conn.Pool
 	persqueue        *lazy.LazyPersqueue
 	persqueueOptions []persqueueConfig.Option
 
-	pool conn.Pool
-
-	mtx sync.Mutex
-	db  database.Connection
+	mtx    sync.Mutex
+	router router.Connection
 
 	children    map[uint64]Connection
 	childrenMtx sync.Mutex
@@ -115,7 +137,7 @@ func (c *connection) Close(ctx context.Context) error {
 	}()
 
 	c.childrenMtx.Lock()
-	closers := make([]func(context.Context) error, 0, len(c.children)+7)
+	closers := make([]func(context.Context) error, 0)
 	for _, child := range c.children {
 		closers = append(closers, child.Close)
 	}
@@ -124,12 +146,42 @@ func (c *connection) Close(ctx context.Context) error {
 
 	closers = append(
 		closers,
-		c.ratelimiter.Close,
-		c.coordination.Close,
-		c.scheme.Close,
-		c.table.Close,
-		c.scripting.Close,
-		c.db.Close,
+		func(ctx context.Context) error {
+			c.ratelimiterOnce.Do(func() {})
+			if c.ratelimiter == nil {
+				return nil
+			}
+			return c.ratelimiter.Close(ctx)
+		},
+		func(ctx context.Context) error {
+			c.coordinationOnce.Do(func() {})
+			if c.coordination == nil {
+				return nil
+			}
+			return c.coordination.Close(ctx)
+		},
+		func(ctx context.Context) error {
+			c.schemeOnce.Do(func() {})
+			if c.scheme == nil {
+				return nil
+			}
+			return c.scheme.Close(ctx)
+		},
+		func(ctx context.Context) error {
+			c.scriptingOnce.Do(func() {})
+			if c.scripting == nil {
+				return nil
+			}
+			return c.scripting.Close(ctx)
+		},
+		func(ctx context.Context) error {
+			c.tableOnce.Do(func() {})
+			if c.table == nil {
+				return nil
+			}
+			return c.table.Close(ctx)
+		},
+		c.router.Close,
 		c.pool.Release,
 	)
 
@@ -154,7 +206,7 @@ func (c *connection) Invoke(
 	reply interface{},
 	opts ...grpc.CallOption,
 ) (err error) {
-	return c.db.Invoke(
+	return c.router.Invoke(
 		conn.WithoutWrapping(ctx),
 		method,
 		args,
@@ -169,7 +221,7 @@ func (c *connection) NewStream(
 	method string,
 	opts ...grpc.CallOption,
 ) (grpc.ClientStream, error) {
-	return c.db.NewStream(
+	return c.router.NewStream(
 		conn.WithoutWrapping(ctx),
 		desc,
 		method,
@@ -190,26 +242,101 @@ func (c *connection) Secure() bool {
 }
 
 func (c *connection) Table() table.Client {
+	c.tableOnce.Do(func() {
+		c.table = internalTable.New(
+			c.router,
+			tableConfig.New(
+				append(
+					// prepend common params from root config
+					[]tableConfig.Option{
+						tableConfig.With(c.config.Common),
+					},
+					c.tableOptions...,
+				)...,
+			),
+		)
+	})
+	// may be nil if driver closed early
 	return c.table
 }
 
 func (c *connection) Scheme() scheme.Client {
+	c.schemeOnce.Do(func() {
+		c.scheme = internalScheme.New(
+			c.router,
+			schemeConfig.New(
+				append(
+					// prepend common params from root config
+					[]schemeConfig.Option{
+						schemeConfig.With(c.config.Common),
+					},
+					c.schemeOptions...,
+				)...,
+			),
+		)
+	})
+	// may be nil if driver closed early
 	return c.scheme
 }
 
 func (c *connection) Coordination() coordination.Client {
+	c.coordinationOnce.Do(func() {
+		c.coordination = internalCoordination.New(
+			c.router,
+			coordinationConfig.New(
+				append(
+					// prepend common params from root config
+					[]coordinationConfig.Option{
+						coordinationConfig.With(c.config.Common),
+					},
+					c.coordinationOptions...,
+				)...,
+			),
+		)
+	})
+	// may be nil if driver closed early
 	return c.coordination
 }
 
 func (c *connection) Ratelimiter() ratelimiter.Client {
+	c.ratelimiterOnce.Do(func() {
+		c.ratelimiter = internalRatelimiter.New(
+			c.router,
+			ratelimiterConfig.New(
+				append(
+					// prepend common params from root config
+					[]ratelimiterConfig.Option{
+						ratelimiterConfig.With(c.config.Common),
+					},
+					c.ratelimiterOptions...,
+				)...,
+			),
+		)
+	})
+	// may be nil if driver closed early
 	return c.ratelimiter
 }
 
 func (c *connection) Discovery() discovery.Client {
-	return c.db.Discovery()
+	return c.router.Discovery()
 }
 
 func (c *connection) Scripting() scripting.Client {
+	c.scriptingOnce.Do(func() {
+		c.scripting = internalScripting.New(
+			c,
+			scriptingConfig.New(
+				append(
+					// prepend common params from root config
+					[]scriptingConfig.Option{
+						scriptingConfig.With(c.config.Common),
+					},
+					c.scriptingOptions...,
+				)...,
+			),
+		)
+	})
+	// may be nil if driver closed early
 	return c.scripting
 }
 
@@ -221,9 +348,9 @@ func (c *connection) Persqueue() persqueue.Client {
 //
 // DSN accept connection string like
 //
-//   "grpc[s]://{endpoint}/?database={database}"
+//   "grpc[s]://{endpoint}/?database={database}[&param=value]"
 //
-// See `sugar.DSN` helper for make dsn from endpoint and database
+// See sugar.DSN helper for make dsn from endpoint and database
 func Open(ctx context.Context, dsn string, opts ...Option) (_ Connection, err error) {
 	return open(
 		ctx,
@@ -279,13 +406,6 @@ func open(ctx context.Context, opts ...Option) (_ Connection, err error) {
 		return nil, xerrors.WithStackTrace(errors.New("configuration: empty database"))
 	}
 
-	if single.IsSingle(c.config.Balancer()) {
-		c.discoveryOptions = append(
-			c.discoveryOptions,
-			discoveryConfig.WithInterval(0),
-		)
-	}
-
 	if c.pool == nil {
 		c.pool = conn.NewPool(
 			ctx,
@@ -293,7 +413,7 @@ func open(ctx context.Context, opts ...Option) (_ Connection, err error) {
 		)
 	}
 
-	c.db, err = database.New(
+	c.router, err = router.New(
 		ctx,
 		c.config,
 		c.pool,
@@ -313,61 +433,6 @@ func open(ctx context.Context, opts ...Option) (_ Connection, err error) {
 		return nil, xerrors.WithStackTrace(err)
 	}
 
-	c.table = lazy.Table(
-		c.db,
-		append(
-			// prepend common params from root config
-			[]tableConfig.Option{
-				tableConfig.With(c.config.Common),
-			},
-			c.tableOptions...,
-		),
-	)
-
-	c.scheme = lazy.Scheme(
-		c.db,
-		append(
-			// prepend common params from root config
-			[]schemeConfig.Option{
-				schemeConfig.With(c.config.Common),
-			},
-			c.schemeOptions...,
-		),
-	)
-
-	c.scripting = lazy.Scripting(
-		c.db,
-		append(
-			// prepend common params from root config
-			[]scriptingConfig.Option{
-				scriptingConfig.With(c.config.Common),
-			},
-			c.scriptingOptions...,
-		),
-	)
-
-	c.coordination = lazy.Coordination(
-		c.db,
-		append(
-			// prepend common params from root config
-			[]coordinationConfig.Option{
-				coordinationConfig.With(c.config.Common),
-			},
-			c.coordinationOptions...,
-		),
-	)
-
-	c.ratelimiter = lazy.Ratelimiter(
-		c.db,
-		append(
-			// prepend common params from root config
-			[]ratelimiterConfig.Option{
-				ratelimiterConfig.With(c.config.Common),
-			},
-			c.ratelimiterOptions...,
-		),
-	)
-
 	c.persqueue = lazy.Persqueue(
 		c.db, // prepend config params from root config
 		append(
@@ -380,4 +445,15 @@ func open(ctx context.Context, opts ...Option) (_ Connection, err error) {
 	)
 
 	return c, nil
+}
+
+// GRPCConn casts ydb.Connection to grpc.ClientConnInterface for executing
+// unary and streaming RPC over internal driver balancer.
+//
+// Warning: for connect to driver-unsupported YDB services
+func GRPCConn(conn Connection) grpc.ClientConnInterface {
+	if cc, ok := conn.(*connection); ok {
+		return cc
+	}
+	return nil
 }

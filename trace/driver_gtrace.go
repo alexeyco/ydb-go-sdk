@@ -38,7 +38,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverInitDoneInfo) 
+			var r, r1 func(DriverInitDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -73,7 +73,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverCloseDoneInfo) 
+			var r, r1 func(DriverCloseDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -108,7 +108,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverNetReadDoneInfo) 
+			var r, r1 func(DriverNetReadDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -143,7 +143,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverNetWriteDoneInfo) 
+			var r, r1 func(DriverNetWriteDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -178,7 +178,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverNetDialDoneInfo) 
+			var r, r1 func(DriverNetDialDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -213,7 +213,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverNetCloseDoneInfo) 
+			var r, r1 func(DriverNetCloseDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -248,7 +248,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverResolveDoneInfo) 
+			var r, r1 func(DriverResolveDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -283,7 +283,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnStateChangeDoneInfo) 
+			var r, r1 func(DriverConnStateChangeDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -318,7 +318,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnInvokeDoneInfo) 
+			var r, r1 func(DriverConnInvokeDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -353,7 +353,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnNewStreamRecvInfo) func(DriverConnNewStreamDoneInfo) 
+			var r, r1 func(DriverConnNewStreamRecvInfo) func(DriverConnNewStreamDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -368,7 +368,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 						}
 					}()
 				}
-				var r2, r3 func(DriverConnNewStreamDoneInfo) 
+				var r2, r3 func(DriverConnNewStreamDoneInfo)
 				if r != nil {
 					r2 = r(d)
 				}
@@ -404,7 +404,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnTakeDoneInfo) 
+			var r, r1 func(DriverConnTakeDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -412,6 +412,146 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 				r1 = h2(d)
 			}
 			return func(d DriverConnTakeDoneInfo) {
+				if options.panicCallback != nil {
+					defer func() {
+						if e := recover(); e != nil {
+							options.panicCallback(e)
+						}
+					}()
+				}
+				if r != nil {
+					r(d)
+				}
+				if r1 != nil {
+					r1(d)
+				}
+			}
+		}
+	}
+	{
+		h1 := t.OnConnPark
+		h2 := x.OnConnPark
+		ret.OnConnPark = func(d DriverConnParkStartInfo) func(DriverConnParkDoneInfo) {
+			if options.panicCallback != nil {
+				defer func() {
+					if e := recover(); e != nil {
+						options.panicCallback(e)
+					}
+				}()
+			}
+			var r, r1 func(DriverConnParkDoneInfo)
+			if h1 != nil {
+				r = h1(d)
+			}
+			if h2 != nil {
+				r1 = h2(d)
+			}
+			return func(d DriverConnParkDoneInfo) {
+				if options.panicCallback != nil {
+					defer func() {
+						if e := recover(); e != nil {
+							options.panicCallback(e)
+						}
+					}()
+				}
+				if r != nil {
+					r(d)
+				}
+				if r1 != nil {
+					r1(d)
+				}
+			}
+		}
+	}
+	{
+		h1 := t.OnConnBan
+		h2 := x.OnConnBan
+		ret.OnConnBan = func(d DriverConnBanStartInfo) func(DriverConnBanDoneInfo) {
+			if options.panicCallback != nil {
+				defer func() {
+					if e := recover(); e != nil {
+						options.panicCallback(e)
+					}
+				}()
+			}
+			var r, r1 func(DriverConnBanDoneInfo)
+			if h1 != nil {
+				r = h1(d)
+			}
+			if h2 != nil {
+				r1 = h2(d)
+			}
+			return func(d DriverConnBanDoneInfo) {
+				if options.panicCallback != nil {
+					defer func() {
+						if e := recover(); e != nil {
+							options.panicCallback(e)
+						}
+					}()
+				}
+				if r != nil {
+					r(d)
+				}
+				if r1 != nil {
+					r1(d)
+				}
+			}
+		}
+	}
+	{
+		h1 := t.OnConnAllow
+		h2 := x.OnConnAllow
+		ret.OnConnAllow = func(d DriverConnAllowStartInfo) func(DriverConnAllowDoneInfo) {
+			if options.panicCallback != nil {
+				defer func() {
+					if e := recover(); e != nil {
+						options.panicCallback(e)
+					}
+				}()
+			}
+			var r, r1 func(DriverConnAllowDoneInfo)
+			if h1 != nil {
+				r = h1(d)
+			}
+			if h2 != nil {
+				r1 = h2(d)
+			}
+			return func(d DriverConnAllowDoneInfo) {
+				if options.panicCallback != nil {
+					defer func() {
+						if e := recover(); e != nil {
+							options.panicCallback(e)
+						}
+					}()
+				}
+				if r != nil {
+					r(d)
+				}
+				if r1 != nil {
+					r1(d)
+				}
+			}
+		}
+	}
+	{
+		h1 := t.OnConnClose
+		h2 := x.OnConnClose
+		ret.OnConnClose = func(d DriverConnCloseStartInfo) func(DriverConnCloseDoneInfo) {
+			if options.panicCallback != nil {
+				defer func() {
+					if e := recover(); e != nil {
+						options.panicCallback(e)
+					}
+				}()
+			}
+			var r, r1 func(DriverConnCloseDoneInfo)
+			if h1 != nil {
+				r = h1(d)
+			}
+			if h2 != nil {
+				r1 = h2(d)
+			}
+			return func(d DriverConnCloseDoneInfo) {
 				if options.panicCallback != nil {
 					defer func() {
 						if e := recover(); e != nil {
@@ -467,76 +607,6 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 		}
 	}
 	{
-		h1 := t.OnConnPark
-		h2 := x.OnConnPark
-		ret.OnConnPark = func(d DriverConnParkStartInfo) func(DriverConnParkDoneInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			var r, r1 func(DriverConnParkDoneInfo) 
-			if h1 != nil {
-				r = h1(d)
-			}
-			if h2 != nil {
-				r1 = h2(d)
-			}
-			return func(d DriverConnParkDoneInfo) {
-				if options.panicCallback != nil {
-					defer func() {
-						if e := recover(); e != nil {
-							options.panicCallback(e)
-						}
-					}()
-				}
-				if r != nil {
-					r(d)
-				}
-				if r1 != nil {
-					r1(d)
-				}
-			}
-		}
-	}
-	{
-		h1 := t.OnConnClose
-		h2 := x.OnConnClose
-		ret.OnConnClose = func(d DriverConnCloseStartInfo) func(DriverConnCloseDoneInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			var r, r1 func(DriverConnCloseDoneInfo) 
-			if h1 != nil {
-				r = h1(d)
-			}
-			if h2 != nil {
-				r1 = h2(d)
-			}
-			return func(d DriverConnCloseDoneInfo) {
-				if options.panicCallback != nil {
-					defer func() {
-						if e := recover(); e != nil {
-							options.panicCallback(e)
-						}
-					}()
-				}
-				if r != nil {
-					r(d)
-				}
-				if r1 != nil {
-					r1(d)
-				}
-			}
-		}
-	}
-	{
 		h1 := t.OnConnRelease
 		h2 := x.OnConnRelease
 		ret.OnConnRelease = func(d DriverConnReleaseStartInfo) func(DriverConnReleaseDoneInfo) {
@@ -547,7 +617,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverConnReleaseDoneInfo) 
+			var r, r1 func(DriverConnReleaseDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -582,7 +652,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverClusterInitDoneInfo) 
+			var r, r1 func(DriverClusterInitDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -617,7 +687,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverClusterCloseDoneInfo) 
+			var r, r1 func(DriverClusterCloseDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -652,7 +722,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverClusterGetDoneInfo) 
+			var r, r1 func(DriverClusterGetDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -687,7 +757,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverClusterInsertDoneInfo) 
+			var r, r1 func(DriverClusterInsertDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -722,7 +792,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverClusterRemoveDoneInfo) 
+			var r, r1 func(DriverClusterRemoveDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -757,7 +827,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverPessimizeNodeDoneInfo) 
+			var r, r1 func(DriverPessimizeNodeDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -782,9 +852,9 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 		}
 	}
 	{
-		h1 := t.OnRepeaterWakeUp
-		h2 := x.OnRepeaterWakeUp
-		ret.OnRepeaterWakeUp = func(d DriverRepeaterTickStartInfo) func(DriverRepeaterTickDoneInfo) {
+		h1 := t.OnUnpessimizeNode
+		h2 := x.OnUnpessimizeNode
+		ret.OnUnpessimizeNode = func(d DriverUnpessimizeNodeStartInfo) func(DriverUnpessimizeNodeDoneInfo) {
 			if options.panicCallback != nil {
 				defer func() {
 					if e := recover(); e != nil {
@@ -792,14 +862,49 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverRepeaterTickDoneInfo) 
+			var r, r1 func(DriverUnpessimizeNodeDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
 			if h2 != nil {
 				r1 = h2(d)
 			}
-			return func(d DriverRepeaterTickDoneInfo) {
+			return func(d DriverUnpessimizeNodeDoneInfo) {
+				if options.panicCallback != nil {
+					defer func() {
+						if e := recover(); e != nil {
+							options.panicCallback(e)
+						}
+					}()
+				}
+				if r != nil {
+					r(d)
+				}
+				if r1 != nil {
+					r1(d)
+				}
+			}
+		}
+	}
+	{
+		h1 := t.OnRepeaterWakeUp
+		h2 := x.OnRepeaterWakeUp
+		ret.OnRepeaterWakeUp = func(d DriverRepeaterWakeUpStartInfo) func(DriverRepeaterWakeUpDoneInfo) {
+			if options.panicCallback != nil {
+				defer func() {
+					if e := recover(); e != nil {
+						options.panicCallback(e)
+					}
+				}()
+			}
+			var r, r1 func(DriverRepeaterWakeUpDoneInfo)
+			if h1 != nil {
+				r = h1(d)
+			}
+			if h2 != nil {
+				r1 = h2(d)
+			}
+			return func(d DriverRepeaterWakeUpDoneInfo) {
 				if options.panicCallback != nil {
 					defer func() {
 						if e := recover(); e != nil {
@@ -827,7 +932,7 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 					}
 				}()
 			}
-			var r, r1 func(DriverGetCredentialsDoneInfo) 
+			var r, r1 func(DriverGetCredentialsDoneInfo)
 			if h1 != nil {
 				r = h1(d)
 			}
@@ -1030,20 +1135,6 @@ func (t Driver) onConnTake(d DriverConnTakeStartInfo) func(DriverConnTakeDoneInf
 	}
 	return res
 }
-func (t Driver) onConnUsagesChange(d DriverConnUsagesChangeInfo) {
-	fn := t.OnConnUsagesChange
-	if fn == nil {
-		return
-	}
-	fn(d)
-}
-func (t Driver) onConnStreamUsagesChange(d DriverConnStreamUsagesChangeInfo) {
-	fn := t.OnConnStreamUsagesChange
-	if fn == nil {
-		return
-	}
-	fn(d)
-}
 func (t Driver) onConnPark(d DriverConnParkStartInfo) func(DriverConnParkDoneInfo) {
 	fn := t.OnConnPark
 	if fn == nil {
@@ -1054,6 +1145,36 @@ func (t Driver) onConnPark(d DriverConnParkStartInfo) func(DriverConnParkDoneInf
 	res := fn(d)
 	if res == nil {
 		return func(DriverConnParkDoneInfo) {
+			return
+		}
+	}
+	return res
+}
+func (t Driver) onConnBan(d DriverConnBanStartInfo) func(DriverConnBanDoneInfo) {
+	fn := t.OnConnBan
+	if fn == nil {
+		return func(DriverConnBanDoneInfo) {
+			return
+		}
+	}
+	res := fn(d)
+	if res == nil {
+		return func(DriverConnBanDoneInfo) {
+			return
+		}
+	}
+	return res
+}
+func (t Driver) onConnAllow(d DriverConnAllowStartInfo) func(DriverConnAllowDoneInfo) {
+	fn := t.OnConnAllow
+	if fn == nil {
+		return func(DriverConnAllowDoneInfo) {
+			return
+		}
+	}
+	res := fn(d)
+	if res == nil {
+		return func(DriverConnAllowDoneInfo) {
 			return
 		}
 	}
@@ -1073,6 +1194,20 @@ func (t Driver) onConnClose(d DriverConnCloseStartInfo) func(DriverConnCloseDone
 		}
 	}
 	return res
+}
+func (t Driver) onConnUsagesChange(d DriverConnUsagesChangeInfo) {
+	fn := t.OnConnUsagesChange
+	if fn == nil {
+		return
+	}
+	fn(d)
+}
+func (t Driver) onConnStreamUsagesChange(d DriverConnStreamUsagesChangeInfo) {
+	fn := t.OnConnStreamUsagesChange
+	if fn == nil {
+		return
+	}
+	fn(d)
 }
 func (t Driver) onConnRelease(d DriverConnReleaseStartInfo) func(DriverConnReleaseDoneInfo) {
 	fn := t.OnConnRelease
@@ -1179,16 +1314,31 @@ func (t Driver) onPessimizeNode(d DriverPessimizeNodeStartInfo) func(DriverPessi
 	}
 	return res
 }
-func (t Driver) onRepeaterWakeUp(d DriverRepeaterTickStartInfo) func(DriverRepeaterTickDoneInfo) {
-	fn := t.OnRepeaterWakeUp
+func (t Driver) onUnpessimizeNode(d DriverUnpessimizeNodeStartInfo) func(DriverUnpessimizeNodeDoneInfo) {
+	fn := t.OnUnpessimizeNode
 	if fn == nil {
-		return func(DriverRepeaterTickDoneInfo) {
+		return func(DriverUnpessimizeNodeDoneInfo) {
 			return
 		}
 	}
 	res := fn(d)
 	if res == nil {
-		return func(DriverRepeaterTickDoneInfo) {
+		return func(DriverUnpessimizeNodeDoneInfo) {
+			return
+		}
+	}
+	return res
+}
+func (t Driver) onRepeaterWakeUp(d DriverRepeaterWakeUpStartInfo) func(DriverRepeaterWakeUpDoneInfo) {
+	fn := t.OnRepeaterWakeUp
+	if fn == nil {
+		return func(DriverRepeaterWakeUpDoneInfo) {
+			return
+		}
+	}
+	res := fn(d)
+	if res == nil {
+		return func(DriverRepeaterWakeUpDoneInfo) {
 			return
 		}
 	}
@@ -1343,18 +1493,6 @@ func DriverOnConnTake(t Driver, c *context.Context, endpoint EndpointInfo) func(
 		res(p)
 	}
 }
-func DriverOnConnUsagesChange(t Driver, endpoint EndpointInfo, usages int) {
-	var p DriverConnUsagesChangeInfo
-	p.Endpoint = endpoint
-	p.Usages = usages
-	t.onConnUsagesChange(p)
-}
-func DriverOnConnStreamUsagesChange(t Driver, endpoint EndpointInfo, usages int) {
-	var p DriverConnStreamUsagesChangeInfo
-	p.Endpoint = endpoint
-	p.Usages = usages
-	t.onConnStreamUsagesChange(p)
-}
 func DriverOnConnPark(t Driver, c *context.Context, endpoint EndpointInfo) func(error) {
 	var p DriverConnParkStartInfo
 	p.Context = c
@@ -1363,6 +1501,31 @@ func DriverOnConnPark(t Driver, c *context.Context, endpoint EndpointInfo) func(
 	return func(e error) {
 		var p DriverConnParkDoneInfo
 		p.Error = e
+		res(p)
+	}
+}
+func DriverOnConnBan(t Driver, c *context.Context, endpoint EndpointInfo, state ConnState, cause error) func(state ConnState) {
+	var p DriverConnBanStartInfo
+	p.Context = c
+	p.Endpoint = endpoint
+	p.State = state
+	p.Cause = cause
+	res := t.onConnBan(p)
+	return func(state ConnState) {
+		var p DriverConnBanDoneInfo
+		p.State = state
+		res(p)
+	}
+}
+func DriverOnConnAllow(t Driver, c *context.Context, endpoint EndpointInfo, state ConnState) func(state ConnState) {
+	var p DriverConnAllowStartInfo
+	p.Context = c
+	p.Endpoint = endpoint
+	p.State = state
+	res := t.onConnAllow(p)
+	return func(state ConnState) {
+		var p DriverConnAllowDoneInfo
+		p.State = state
 		res(p)
 	}
 }
@@ -1376,6 +1539,18 @@ func DriverOnConnClose(t Driver, c *context.Context, endpoint EndpointInfo) func
 		p.Error = e
 		res(p)
 	}
+}
+func DriverOnConnUsagesChange(t Driver, endpoint EndpointInfo, usages int) {
+	var p DriverConnUsagesChangeInfo
+	p.Endpoint = endpoint
+	p.Usages = usages
+	t.onConnUsagesChange(p)
+}
+func DriverOnConnStreamUsagesChange(t Driver, endpoint EndpointInfo, usages int) {
+	var p DriverConnStreamUsagesChangeInfo
+	p.Endpoint = endpoint
+	p.Usages = usages
+	t.onConnStreamUsagesChange(p)
 }
 func DriverOnConnRelease(t Driver, c *context.Context, endpoint EndpointInfo) func(error) {
 	var p DriverConnReleaseStartInfo
@@ -1456,14 +1631,26 @@ func DriverOnPessimizeNode(t Driver, c *context.Context, endpoint EndpointInfo, 
 		res(p)
 	}
 }
+func DriverOnUnpessimizeNode(t Driver, c *context.Context, endpoint EndpointInfo, state ConnState) func(state ConnState) {
+	var p DriverUnpessimizeNodeStartInfo
+	p.Context = c
+	p.Endpoint = endpoint
+	p.State = state
+	res := t.onUnpessimizeNode(p)
+	return func(state ConnState) {
+		var p DriverUnpessimizeNodeDoneInfo
+		p.State = state
+		res(p)
+	}
+}
 func DriverOnRepeaterWakeUp(t Driver, c *context.Context, name string, event string) func(error) {
-	var p DriverRepeaterTickStartInfo
+	var p DriverRepeaterWakeUpStartInfo
 	p.Context = c
 	p.Name = name
 	p.Event = event
 	res := t.onRepeaterWakeUp(p)
 	return func(e error) {
-		var p DriverRepeaterTickDoneInfo
+		var p DriverRepeaterWakeUpDoneInfo
 		p.Error = e
 		res(p)
 	}

@@ -14,35 +14,7 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
 )
 
-type Pool interface {
-	Getter
-	Taker
-	Releaser
-	Pessimizer
-}
-
-type Getter interface {
-	Get(endpoint endpoint.Endpoint) Conn
-}
-
-type Taker interface {
-	Take(ctx context.Context) error
-}
-
-type Releaser interface {
-	Release(ctx context.Context) error
-}
-
-type Pessimizer interface {
-	Pessimize(ctx context.Context, cc Conn, cause error)
-}
-
-type PoolConfig interface {
-	ConnectionTTL() time.Duration
-	GrpcDialOptions() []grpc.DialOption
-}
-
-type pool struct {
+type Pool struct {
 	usages int64
 	config Config
 	mtx    sync.RWMutex
@@ -51,7 +23,7 @@ type pool struct {
 	done   chan struct{}
 }
 
-func (p *pool) Get(endpoint endpoint.Endpoint) Conn {
+func (p *Pool) Get(endpoint endpoint.Endpoint) Conn {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
@@ -62,7 +34,6 @@ func (p *pool) Get(endpoint endpoint.Endpoint) Conn {
 	)
 
 	if cc, has = p.conns[address]; has {
-		cc.changeUsages(1)
 		return cc
 	}
 
@@ -73,13 +44,13 @@ func (p *pool) Get(endpoint endpoint.Endpoint) Conn {
 	return cc
 }
 
-func (p *pool) remove(c *conn) {
+func (p *Pool) remove(c *conn) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 	delete(p.conns, c.Endpoint().Address())
 }
 
-func (p *pool) Pessimize(ctx context.Context, cc Conn, cause error) {
+func (p *Pool) Ban(ctx context.Context, cc Conn, cause error) {
 	e := cc.Endpoint().Copy()
 
 	p.mtx.RLock()
@@ -90,7 +61,7 @@ func (p *pool) Pessimize(ctx context.Context, cc Conn, cause error) {
 		return
 	}
 
-	trace.DriverOnPessimizeNode(
+	trace.DriverOnConnBan(
 		p.config.Trace(),
 		&ctx,
 		e,
@@ -99,12 +70,30 @@ func (p *pool) Pessimize(ctx context.Context, cc Conn, cause error) {
 	)(cc.SetState(Banned))
 }
 
-func (p *pool) Take(context.Context) error {
+func (p *Pool) Allow(ctx context.Context, cc Conn) {
+	e := cc.Endpoint().Copy()
+
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	cc, ok := p.conns[e.Address()]
+	if !ok {
+		return
+	}
+
+	trace.DriverOnConnAllow(p.config.Trace(),
+		&ctx,
+		e,
+		cc.GetState(),
+	)(cc.Unban())
+}
+
+func (p *Pool) Take(context.Context) error {
 	atomic.AddInt64(&p.usages, 1)
 	return nil
 }
 
-func (p *pool) Release(ctx context.Context) error {
+func (p *Pool) Release(ctx context.Context) error {
 	if atomic.AddInt64(&p.usages, -1) > 0 {
 		return nil
 	}
@@ -132,7 +121,7 @@ func (p *pool) Release(ctx context.Context) error {
 	return nil
 }
 
-func (p *pool) connParker(ctx context.Context, ttl, interval time.Duration) {
+func (p *Pool) connParker(ctx context.Context, ttl, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -142,14 +131,19 @@ func (p *pool) connParker(ctx context.Context, ttl, interval time.Duration) {
 		case <-ticker.C:
 			for _, c := range p.collectConns() {
 				if time.Since(c.LastUsage()) > ttl {
-					_ = c.park(ctx)
+					switch c.GetState() {
+					case Online, Banned:
+						_ = c.park(ctx)
+					default:
+						// nop
+					}
 				}
 			}
 		}
 	}
 }
 
-func (p *pool) collectConns() []*conn {
+func (p *Pool) collectConns() []*conn {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 	conns := make([]*conn, 0, len(p.conns))
@@ -162,8 +156,8 @@ func (p *pool) collectConns() []*conn {
 func NewPool(
 	ctx context.Context,
 	config Config,
-) Pool {
-	p := &pool{
+) *Pool {
+	p := &Pool{
 		usages: 1,
 		config: config,
 		opts:   config.GrpcDialOptions(),
