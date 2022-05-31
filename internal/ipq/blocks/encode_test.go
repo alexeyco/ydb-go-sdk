@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/persqueue/blocks"
-	"github.com/ydb-platform/ydb-go-sdk/v3/persqueue"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ipq/blocks"
+	"github.com/ydb-platform/ydb-go-sdk/v3/pq"
 )
 
 func TestPerMessageEncode(t *testing.T) {
@@ -24,7 +24,7 @@ func TestPerMessageEncode(t *testing.T) {
 				Offset:           i + 1,
 				PartNumber:       0,
 				MessageCount:     1,
-				UncompressedSize: len(s), Codec: persqueue.CodecRaw,
+				UncompressedSize: len(s), Codec: pq.CodecRaw,
 			},
 			Data: *bytes.NewBuffer([]byte(s)),
 		})
@@ -51,9 +51,9 @@ func TestPerMessageEncode(t *testing.T) {
 	}
 }
 
-type msgSliceIter []persqueue.EncodeReader
+type msgSliceIter []pq.EncodeReader
 
-func (mi *msgSliceIter) NextMessage() (persqueue.EncodeReader, bool) {
+func (mi *msgSliceIter) NextMessage() (pq.EncodeReader, bool) {
 	slice := *mi
 	if len(slice) == 0 {
 		return nil, true

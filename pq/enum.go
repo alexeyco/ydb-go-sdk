@@ -1,4 +1,4 @@
-package persqueue
+package pq
 
 // Codec for stream data encoding settings
 type Codec uint8
@@ -9,6 +9,8 @@ const (
 	CodecGzip
 	CodecLzop
 	CodecZstd
+
+	CodecAuto = -1
 )
 
 func (c Codec) String() string {

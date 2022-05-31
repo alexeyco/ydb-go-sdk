@@ -11,8 +11,8 @@ import (
 
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/operation"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
-	"github.com/ydb-platform/ydb-go-sdk/v3/persqueue/cluster"
-	"github.com/ydb-platform/ydb-go-sdk/v3/persqueue/config"
+	"github.com/ydb-platform/ydb-go-sdk/v3/pq/cluster"
+	"github.com/ydb-platform/ydb-go-sdk/v3/pq/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/retry"
 )
 

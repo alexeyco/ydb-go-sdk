@@ -1,4 +1,4 @@
-package persqueue
+package pq
 
 import (
 	"context"

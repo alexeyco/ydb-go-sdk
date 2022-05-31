@@ -1,11 +1,11 @@
 package blocks
 
 import (
-	"github.com/ydb-platform/ydb-go-sdk/v3/persqueue"
+	"github.com/ydb-platform/ydb-go-sdk/v3/pq"
 )
 
 type MessageIterator interface {
-	NextMessage() (data persqueue.EncodeReader, end bool)
+	NextMessage() (data pq.EncodeReader, end bool)
 }
 
 type BlockIteratot interface {

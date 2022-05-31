@@ -8,7 +8,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	intpq "github.com/ydb-platform/ydb-go-sdk/v3/internal/persqueue"
+	intpq "github.com/ydb-platform/ydb-go-sdk/v3/internal/ipq"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
@@ -28,14 +28,14 @@ import (
 	tableConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/table/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
 	"github.com/ydb-platform/ydb-go-sdk/v3/log"
-	"github.com/ydb-platform/ydb-go-sdk/v3/persqueue"
+	"github.com/ydb-platform/ydb-go-sdk/v3/pq"
 	"github.com/ydb-platform/ydb-go-sdk/v3/ratelimiter"
 	"github.com/ydb-platform/ydb-go-sdk/v3/scheme"
 	"github.com/ydb-platform/ydb-go-sdk/v3/scripting"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table"
 	"github.com/ydb-platform/ydb-go-sdk/v3/trace"
 
-	persqueueConfig "github.com/ydb-platform/ydb-go-sdk/v3/persqueue/config"
+	persqueueConfig "github.com/ydb-platform/ydb-go-sdk/v3/pq/config"
 )
 
 // Connection interface provide access to YDB service clients
@@ -73,7 +73,7 @@ type Connection interface {
 
 	// Scripting returns scripting client
 	Scripting() scripting.Client
-	Persqueue() persqueue.Client
+	Persqueue() pq.Client
 
 	// With makes child connection with the same options and another options
 	With(ctx context.Context, opts ...Option) (Connection, error)
@@ -345,11 +345,12 @@ func (c *connection) Scripting() scripting.Client {
 	return c.scripting
 }
 
-func (c *connection) Persqueue() persqueue.Client {
+func (c *connection) Persqueue() pq.Client {
 	c.persqueueOnce.Do(func() {
 		c.persqueue = intpq.New(c.router, c.persqueueOptions)
 	})
-	return c.persqueue
+	panic("not implemented")
+	//return c.persqueue
 }
 
 // Open connects to database by DSN and return driver runtime holder

@@ -1,4 +1,4 @@
-package persqueue
+package pq
 
 import "time"
 
@@ -79,7 +79,7 @@ type WriteMessage struct {
 	SeqNo     int
 	CreatedAt time.Time
 	SentAt    time.Time
-	Data EncodeReader
+	Data      EncodeReader
 }
 
 type WriteResult struct {

@@ -1,4 +1,4 @@
-package persqueue
+package pq
 
 import (
 	"context"
@@ -35,6 +35,10 @@ func WithAsyncFlushInterval(interval time.Duration) writerOption {
 }
 
 func WithCodec(codec Codec) writerOption {
+	panic("not implemented")
+}
+
+func WithMessageGroupID(groupID string) writerOption {
 	panic("not implemented")
 }
 

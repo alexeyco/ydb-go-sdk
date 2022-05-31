@@ -1,4 +1,4 @@
-package persqueue
+package pq
 
 import (
 	"context"
@@ -52,6 +52,10 @@ func (r *Reader) Close() error {
 	return nil
 }
 
+func (r *Reader) CloseWithContext(ctx context.Context) {
+	panic("not implemented")
+}
+
 // ReadBatchOption для различных пожеланий к батчу вроде WithMaxMessages(int)
 type ReadBatchOption func()
 
@@ -63,11 +67,15 @@ func (r *Reader) ReadMessage(context.Context) (Message, error) {
 	return Message{}, nil
 }
 
-func (r *Reader) CommitMessages(context.Context, ...CommitableByOffset) error {
+func (r *Reader) Commit(context.Context, ...CommitableByOffset) error {
 	// Note: в пределах assign диапазоны оффсетов сообщений собираются на сервере.
 	// Т.е. фактический коммит сообщеинй произойдет когда закоммитятся все предыдущие сообщения.
 	// Это значит что тут может быть минимум логики
 	return nil
+}
+
+func (r *Reader) CommitBatch(ctx context.Context, batch CommitBatch) error {
+	return r.Commit(ctx, batch...)
 }
 
 func DeferMessageCommits(msg ...Message) []CommitableByOffset {

@@ -1,11 +1,11 @@
-package persqueue
+package ipq
 
 import (
 	"fmt"
 
 	pqproto "github.com/ydb-platform/ydb-go-genproto/protos/Ydb_PersQueue_V1"
 
-	"github.com/ydb-platform/ydb-go-sdk/v3/persqueue"
+	"github.com/ydb-platform/ydb-go-sdk/v3/pq"
 )
 
 type streamOptions struct {
@@ -13,15 +13,15 @@ type streamOptions struct {
 	remoteMirror *pqproto.TopicSettings_RemoteMirrorRule
 }
 
-func (o *streamOptions) AddReadRule(r persqueue.ReadRule) {
+func (o *streamOptions) AddReadRule(r pq.ReadRule) {
 	o.readRules = append(o.readRules, encodeReadRule(r))
 }
 
-func (o *streamOptions) SetRemoteMirrorRule(r persqueue.RemoteMirrorRule) {
+func (o *streamOptions) SetRemoteMirrorRule(r pq.RemoteMirrorRule) {
 	o.remoteMirror = encodeRemoteMirrorRule(r)
 }
 
-func encodeTopicSettings(settings persqueue.StreamSettings, opts ...persqueue.StreamOption) *pqproto.TopicSettings {
+func encodeTopicSettings(settings pq.StreamSettings, opts ...pq.StreamOption) *pqproto.TopicSettings {
 	optValues := streamOptions{}
 	for _, o := range opts {
 		o(&optValues)
@@ -43,7 +43,7 @@ func encodeTopicSettings(settings persqueue.StreamSettings, opts ...persqueue.St
 	}
 }
 
-func encodeReadRule(r persqueue.ReadRule) *pqproto.TopicSettings_ReadRule {
+func encodeReadRule(r pq.ReadRule) *pqproto.TopicSettings_ReadRule {
 	return &pqproto.TopicSettings_ReadRule{
 		ConsumerName:               string(r.Consumer),
 		Important:                  r.Important,
@@ -55,7 +55,7 @@ func encodeReadRule(r persqueue.ReadRule) *pqproto.TopicSettings_ReadRule {
 	}
 }
 
-func encodeRemoteMirrorRule(r persqueue.RemoteMirrorRule) *pqproto.TopicSettings_RemoteMirrorRule {
+func encodeRemoteMirrorRule(r pq.RemoteMirrorRule) *pqproto.TopicSettings_RemoteMirrorRule {
 	return &pqproto.TopicSettings_RemoteMirrorRule{
 		Endpoint:                   r.Endpoint,
 		TopicPath:                  string(r.SourceStream),
@@ -66,19 +66,19 @@ func encodeRemoteMirrorRule(r persqueue.RemoteMirrorRule) *pqproto.TopicSettings
 	}
 }
 
-func encodeCodecs(v []persqueue.Codec) []pqproto.Codec {
+func encodeCodecs(v []pq.Codec) []pqproto.Codec {
 	result := make([]pqproto.Codec, len(v))
 	for i := range result {
 		switch v[i] {
-		case persqueue.CodecUnspecified:
+		case pq.CodecUnspecified:
 			result[i] = pqproto.Codec_CODEC_UNSPECIFIED
-		case persqueue.CodecRaw:
+		case pq.CodecRaw:
 			result[i] = pqproto.Codec_CODEC_RAW
-		case persqueue.CodecGzip:
+		case pq.CodecGzip:
 			result[i] = pqproto.Codec_CODEC_GZIP
-		case persqueue.CodecLzop:
+		case pq.CodecLzop:
 			result[i] = pqproto.Codec_CODEC_LZOP
-		case persqueue.CodecZstd:
+		case pq.CodecZstd:
 			result[i] = pqproto.Codec_CODEC_ZSTD
 		default:
 			panic(fmt.Sprintf("unknown codec value %v", v))
@@ -87,23 +87,23 @@ func encodeCodecs(v []persqueue.Codec) []pqproto.Codec {
 	return result
 }
 
-func encodeFormat(v persqueue.Format) pqproto.TopicSettings_Format {
+func encodeFormat(v pq.Format) pqproto.TopicSettings_Format {
 	switch v {
-	case persqueue.FormatUnspecified:
+	case pq.FormatUnspecified:
 		return pqproto.TopicSettings_FORMAT_UNSPECIFIED
-	case persqueue.FormatBase:
+	case pq.FormatBase:
 		return pqproto.TopicSettings_FORMAT_BASE
 	default:
 		panic(fmt.Sprintf("unknown format value %v", v))
 	}
 }
 
-func encodeRemoteMirrorCredentials(v persqueue.RemoteMirrorCredentials) *pqproto.Credentials {
+func encodeRemoteMirrorCredentials(v pq.RemoteMirrorCredentials) *pqproto.Credentials {
 	if v == nil {
 		return nil
 	}
 	switch c := v.(type) {
-	case persqueue.IAMCredentials:
+	case pq.IAMCredentials:
 		return &pqproto.Credentials{
 			Credentials: &pqproto.Credentials_Iam_{
 				Iam: &pqproto.Credentials_Iam{
@@ -112,13 +112,13 @@ func encodeRemoteMirrorCredentials(v persqueue.RemoteMirrorCredentials) *pqproto
 				},
 			},
 		}
-	case persqueue.JWTCredentials:
+	case pq.JWTCredentials:
 		return &pqproto.Credentials{
 			Credentials: &pqproto.Credentials_JwtParams{
 				JwtParams: string(c),
 			},
 		}
-	case persqueue.OAuthTokenCredentials:
+	case pq.OAuthTokenCredentials:
 		return &pqproto.Credentials{
 			Credentials: &pqproto.Credentials_OauthToken{
 				OauthToken: string(c),

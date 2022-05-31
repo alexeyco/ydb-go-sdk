@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 
-	"github.com/ydb-platform/ydb-go-sdk/v3/persqueue"
+	"github.com/ydb-platform/ydb-go-sdk/v3/pq"
 )
 
 type Block struct {
@@ -17,7 +17,7 @@ type Meta struct {
 	PartNumber       int
 	MessageCount     int
 	UncompressedSize int
-	Codec            persqueue.Codec
+	Codec            pq.Codec
 }
 
 var _ BlockIteratot = &BasicFormatBlockEncoder{}

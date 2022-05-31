@@ -1,4 +1,4 @@
-package persqueue
+package pq
 
 import (
 	"time"
@@ -160,7 +160,7 @@ type PartitionOffset struct {
 
 type ReadSelector struct {
 	Stream             scheme.Path
-	PartitionGroups    []int
+	Partitions         []int
 	SkipMessagesBefore time.Time
 }
 

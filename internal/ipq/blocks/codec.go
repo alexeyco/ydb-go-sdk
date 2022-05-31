@@ -4,23 +4,23 @@ import (
 	"context"
 	"io"
 
-	"github.com/ydb-platform/ydb-go-sdk/v3/persqueue"
+	"github.com/ydb-platform/ydb-go-sdk/v3/pq"
 )
 
 type Encoder interface {
-	Codec() persqueue.Codec
+	Codec() pq.Codec
 	Encode(context.Context, io.Reader, io.Writer) error
 }
 
 type Decode interface {
-	Codec() persqueue.Codec
+	Codec() pq.Codec
 	Decode(context.Context, io.Reader, io.Writer) error
 }
 
 type RawCodec struct{}
 
-func (RawCodec) Codec() persqueue.Codec {
-	return persqueue.CodecRaw
+func (RawCodec) Codec() pq.Codec {
+	return pq.CodecRaw
 }
 
 func (c RawCodec) Encode(ctx context.Context, r io.Reader, w io.Writer) error {

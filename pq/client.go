@@ -1,4 +1,4 @@
-package persqueue
+package pq
 
 import (
 	"context"
@@ -15,42 +15,16 @@ type Client interface {
 
 	DescribeStream(context.Context, scheme.Path) (StreamInfo, error)
 	DropStream(context.Context, scheme.Path) error
-	CreateStream(context.Context, scheme.Path, StreamSettings, ...StreamOption) error
-	AlterStream(context.Context, scheme.Path, StreamSettings, ...StreamOption) error
+	CreateStream(context.Context, scheme.Path, ...StreamOption) error
+	AlterStream(context.Context, scheme.Path, ...StreamOption) error
 	AddReadRule(context.Context, scheme.Path, ReadRule) error
 	RemoveReadRule(context.Context, scheme.Path, Consumer) error
+
+	Writer(ctx context.Context, opts ...writerOption) Writer
+	Reader(ctx context.Context, opts ...readerOption) Reader
 }
 
 type Consumer string
-
-type StreamSettings struct {
-	// How many partitions in topic. Must less than database limit. Default limit - 10.
-	PartitionsCount int
-	// How long data in partition should be stored. Must be greater than 0 and less than limit for this database.
-	// Default limit - 36 hours.
-	RetentionPeriod time.Duration
-	// How long last written seqno for message group should be stored. Must be greater then retention_period_ms
-	// and less then limit for this database.  Default limit - 16 days.
-	MessageGroupSeqnoRetentionPeriod time.Duration
-	// How many last written seqno for various message groups should be stored per partition. Must be less than limit
-	// for this database.  Default limit - 6*10^6 values.
-	MaxPartitionMessageGroupsSeqnoStored int
-	// List of allowed codecs for stream writes.
-	// Writes with codec not from this list are forbidden.
-	SupportedCodecs []Codec
-	// Max storage usage for each topic's partition. Must be less than database limit. Default limit - 130 GB.
-	MaxPartitionStorageSize int
-	// Partition write speed in bytes per second. Must be less than database limit. Default limit - 1 MB/s.
-	MaxPartitionWriteSpeed int
-	// Burst size for write in partition, in bytes. Must be less than database limit. Default limit - 1 MB.
-	MaxPartitionWriteBurst int
-
-	// Max format version that is allowed for writers.
-	// Writes with greater format version are forbidden.
-	SupportedFormat Format
-	// Disallows client writes. Used for mirrored topics in federation.
-	ClientWriteDisabled bool
-}
 
 // Message for read rules description.
 type ReadRule struct {

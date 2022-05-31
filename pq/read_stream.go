@@ -1,4 +1,4 @@
-package persqueue
+package pq
 
 type ReadStream interface {
 	Send(ReadSendMessage) error
