@@ -1,10 +1,66 @@
 package pqstreamreader
 
-import "github.com/ydb-platform/ydb-go-genproto/Ydb_PersQueue_V1"
+import (
+	"context"
+	"time"
+
+	"github.com/ydb-platform/ydb-go-genproto/Ydb_PersQueue_V1"
+)
+
+type Codec int
+
+type PartitionSessionID int64
+type Offset int64
 
 type StreamReader struct {
 	g Ydb_PersQueue_V1.PersQueueService_MigrationStreamingReadClient
+
+	OnStartPartitionSessionRequest func(ctx context.Context, req StartPartitionSessionRequest) (StartPartitionSessionResponse, error)
+	OnStopPartitionSessionRequest  func(ctx context.Context, req StopPartitionSessionRequest) (StopPartitionSessionResponse, error)
 }
+
+func NewStreamReader() *StreamReader {
+	panic("not implemented")
+}
+
+//
+// OnStartPartitionSessionRequest
+//
+
+type StartPartitionSessionRequest struct {
+	PartitionSession PartitionSession
+	CommittedOffset  Offset
+	EndOffset        Offset
+}
+type PartitionSession struct {
+	Topic              string
+	PartitionID        int64
+	PartitionSessionID PartitionSessionID
+}
+type StartPartitionSessionResponse struct {
+	PartitionSessionID PartitionSessionID
+	ReadOffset         Offset
+	ReadOffsetUse      bool // ReadOffset used only if ReadOffsetUse=true to distinguish zero and unset variables
+	CommitOffset       Offset
+	CommitOffsetUse    bool // CommitOffset used only if CommitOffsetUse=true to distinguish zero and unset variables
+}
+
+//
+// OnStopPartitionSessionRequest
+//
+
+type StopPartitionSessionRequest struct {
+	PartitionSessionID PartitionSessionID
+	Graceful           bool
+	CommittedOffset    Offset
+}
+type StopPartitionSessionResponse struct {
+	PartitionSessionID PartitionSessionID
+}
+
+//
+// InitRequest
+//
 
 type TopicReadSettings struct {
 	// Topic path.
@@ -64,6 +120,111 @@ type InitRequest struct {
 	IdleTimeoutMs int64
 }
 
-func (r *StreamReader) InitRequest(req InitRequest) error {
+type InitResponse struct {
+	SessionID string
+}
 
+func (r *StreamReader) InitRequest(ctx context.Context, req InitRequest) (InitResponse, error) {
+	panic("not implemented")
+}
+
+type ReadRequest struct {
+	BytesSize int64
+}
+
+type ReadResponse struct {
+	Partitions []PartitionData
+}
+type PartitionData struct {
+	PartitionSessionID int64
+
+	Batches []Batch
+}
+type Batch struct {
+	MessageGroupID string
+	SessionMeta    map[string]string
+	WriteTimeStamp time.Time
+	WriterIP       string
+
+	Messages []MessageData
+}
+
+type MessageData struct {
+	Offset int64
+	SeqNo  int64
+
+	// Timestamp of creation of message provided on write from client.
+	Created          time.Time
+	Codec            Codec
+	Data             []byte
+	UncompressedSize int64
+
+	// Filled if partition_key / hash was used on message write.
+	PartitionKey string
+	ExplicitHash []byte
+}
+
+func (r *StreamReader) ReadRequest(ctx context.Context, req ReadRequest) (ReadResponse, error) {
+	panic("not implemented")
+}
+
+//
+// CommitOffsetRequest
+//
+
+type CommitOffsetRequest struct {
+	Partitions []PartitionCommitOffset
+}
+type PartitionCommitOffset struct {
+	PartitionSessionID PartitionSessionID
+	Offsets            []OffsetRange
+}
+
+// OffsetRange represents range [start_offset, end_offset).
+type OffsetRange struct {
+	Start Offset
+	End   Offset
+}
+
+type CommitOffsetResponse struct {
+	Committed []PartitionCommittedOffset
+}
+type PartitionCommittedOffset struct {
+	PartitionSessionID PartitionSessionID
+	Committed          Offset
+}
+
+func (r *StreamReader) CommitOffsetRequest(ctx context.Context, req CommitOffsetRequest) (CommitOffsetResponse, error) {
+	panic("not implemented")
+}
+
+//
+// PartitionSessionStatusRequest
+//
+
+type PartitionSessionStatusRequest struct {
+	PartitionSessionID PartitionSessionID
+}
+type PartitionSessionStatusResponse struct {
+	PartitionSessionID PartitionSessionID
+	Committed          Offset
+	End                Offset
+	WrittenAtWatermark time.Time
+}
+
+func (r *StreamReader) PartitionSessionStatusRequest(ctx context.Context, req PartitionSessionStatusRequest) (PartitionSessionStatusResponse, error) {
+	panic("not implemented")
+}
+
+//
+// UpdateTokenRequest
+//
+
+type UpdateTokenRequest struct {
+	Token string
+}
+type UpdateTokenResponse struct{}
+
+func (r *StreamReader) UpdateTokenRequest(ctx context.Context, req UpdateTokenRequest) (UpdateTokenResponse, error) {
+	panic("not implemented")
 }
