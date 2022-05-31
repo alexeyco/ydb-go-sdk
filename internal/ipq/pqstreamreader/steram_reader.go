@@ -1,10 +1,9 @@
 package pqstreamreader
 
 import (
-	"context"
 	"time"
 
-	"github.com/ydb-platform/ydb-go-genproto/Ydb_PersQueue_V1"
+	Ydb_PersQueue_V12 "github.com/ydb-platform/ydb-go-genproto/protos/Ydb_PersQueue_V1"
 )
 
 type Codec int
@@ -12,22 +11,69 @@ type Codec int
 type PartitionSessionID int64
 type Offset int64
 
-type StreamReader struct {
-	g Ydb_PersQueue_V1.PersQueueService_MigrationStreamingReadClient
+type StatusCode int
 
-	OnStartPartitionSessionRequest func(ctx context.Context, req StartPartitionSessionRequest) (StartPartitionSessionResponse, error)
-	OnStopPartitionSessionRequest  func(ctx context.Context, req StopPartitionSessionRequest) (StopPartitionSessionResponse, error)
+type StreamReader struct {
+	Stream GrpcStream
 }
 
-func NewStreamReader() *StreamReader {
+type GrpcStream interface {
+	Send(messageNew *Ydb_PersQueue_V12.StreamingReadClientMessageNew) error
+	Recv() (*Ydb_PersQueue_V12.StreamingReadServerMessageNew, error)
+}
+
+func (s StreamReader) Recv() (ServerStreamMessage, error) {
+	panic("not implemented")
+}
+
+func (s StreamReader) Send(mess ClientStreamMessage) error {
 	panic("not implemented")
 }
 
 //
-// OnStartPartitionSessionRequest
+// ClientStreamMessage
+//
+
+type ClientStreamMessage struct {
+	ClientMessage clientMessage
+}
+
+type clientMessage interface {
+	isClientMessage()
+}
+
+type clientMessageImpl struct{}
+
+func (clientMessageImpl) isClientMessage() {}
+
+//
+// ServerStreamMessage
+//
+
+type ServerStreamMessage struct {
+	Status StatusCode
+	Issues []YdbIssueMessage
+
+	ServerMessage serverMessage
+}
+
+type YdbIssueMessage struct {
+}
+
+type serverMessage interface {
+	isServerMessage()
+}
+type serverMessageImpl struct{}
+
+func (serverMessageImpl) isServerMessage() {}
+
+//
+// StartPartitionSessionRequest
 //
 
 type StartPartitionSessionRequest struct {
+	serverMessageImpl
+
 	PartitionSession PartitionSession
 	CommittedOffset  Offset
 	EndOffset        Offset
@@ -37,7 +83,10 @@ type PartitionSession struct {
 	PartitionID        int64
 	PartitionSessionID PartitionSessionID
 }
+
 type StartPartitionSessionResponse struct {
+	clientMessageImpl
+
 	PartitionSessionID PartitionSessionID
 	ReadOffset         Offset
 	ReadOffsetUse      bool // ReadOffset used only if ReadOffsetUse=true to distinguish zero and unset variables
@@ -46,15 +95,19 @@ type StartPartitionSessionResponse struct {
 }
 
 //
-// OnStopPartitionSessionRequest
+// StopPartitionSessionRequest
 //
 
 type StopPartitionSessionRequest struct {
+	serverMessageImpl
+
 	PartitionSessionID PartitionSessionID
 	Graceful           bool
 	CommittedOffset    Offset
 }
 type StopPartitionSessionResponse struct {
+	clientMessageImpl
+
 	PartitionSessionID PartitionSessionID
 }
 
@@ -62,26 +115,9 @@ type StopPartitionSessionResponse struct {
 // InitRequest
 //
 
-type TopicReadSettings struct {
-	// Topic path.
-	Topic string
-
-	// Partition groups that will be read by this session.
-	// If list is empty - then session will read all partition groups.
-	PartitionGroupsID []int64
-
-	// Read data only after this timestamp from this topic.
-	StartFromWrittenAtMs int64
-}
-
-type PartitionSessionState struct {
-	Status int // TODO: Enum from pb
-}
-
-type State struct {
-}
-
 type InitRequest struct {
+	clientMessageImpl
+
 	// Message that describes topic to read.
 	// Topics that will be read by this session.
 	TopicsReadSettings []TopicReadSettings
@@ -119,20 +155,44 @@ type InitRequest struct {
 
 	IdleTimeoutMs int64
 }
+type TopicReadSettings struct {
+	// Topic path.
+	Topic string
+
+	// Partition groups that will be read by this session.
+	// If list is empty - then session will read all partition groups.
+	PartitionGroupsID []int64
+
+	// Read data only after this timestamp from this topic.
+	StartFromWrittenAtMs int64
+}
+
+type PartitionSessionState struct {
+	Status int // TODO: Enum from pb
+}
+
+type State struct {
+}
 
 type InitResponse struct {
+	serverMessageImpl
+
 	SessionID string
 }
 
-func (r *StreamReader) InitRequest(ctx context.Context, req InitRequest) (InitResponse, error) {
-	panic("not implemented")
-}
+//
+// ReadRequest
+//
 
 type ReadRequest struct {
+	clientMessageImpl
+
 	BytesSize int64
 }
 
 type ReadResponse struct {
+	serverMessageImpl
+
 	Partitions []PartitionData
 }
 type PartitionData struct {
@@ -164,15 +224,13 @@ type MessageData struct {
 	ExplicitHash []byte
 }
 
-func (r *StreamReader) ReadRequest(ctx context.Context, req ReadRequest) (ReadResponse, error) {
-	panic("not implemented")
-}
-
 //
 // CommitOffsetRequest
 //
 
 type CommitOffsetRequest struct {
+	clientMessageImpl
+
 	Partitions []PartitionCommitOffset
 }
 type PartitionCommitOffset struct {
@@ -187,6 +245,8 @@ type OffsetRange struct {
 }
 
 type CommitOffsetResponse struct {
+	serverMessageImpl
+
 	Committed []PartitionCommittedOffset
 }
 type PartitionCommittedOffset struct {
@@ -194,26 +254,21 @@ type PartitionCommittedOffset struct {
 	Committed          Offset
 }
 
-func (r *StreamReader) CommitOffsetRequest(ctx context.Context, req CommitOffsetRequest) (CommitOffsetResponse, error) {
-	panic("not implemented")
-}
-
 //
 // PartitionSessionStatusRequest
 //
 
 type PartitionSessionStatusRequest struct {
+	clientMessageImpl
 	PartitionSessionID PartitionSessionID
 }
 type PartitionSessionStatusResponse struct {
+	serverMessageImpl
+
 	PartitionSessionID PartitionSessionID
 	Committed          Offset
 	End                Offset
 	WrittenAtWatermark time.Time
-}
-
-func (r *StreamReader) PartitionSessionStatusRequest(ctx context.Context, req PartitionSessionStatusRequest) (PartitionSessionStatusResponse, error) {
-	panic("not implemented")
 }
 
 //
@@ -221,10 +276,10 @@ func (r *StreamReader) PartitionSessionStatusRequest(ctx context.Context, req Pa
 //
 
 type UpdateTokenRequest struct {
+	clientMessageImpl
+
 	Token string
 }
-type UpdateTokenResponse struct{}
-
-func (r *StreamReader) UpdateTokenRequest(ctx context.Context, req UpdateTokenRequest) (UpdateTokenResponse, error) {
-	panic("not implemented")
+type UpdateTokenResponse struct {
+	serverMessageImpl
 }
