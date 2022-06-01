@@ -59,7 +59,8 @@ type Batch struct {
 
 	CommitOffset // от всех сообщений батча
 
-	ctx context.Context // один на все сообщения
+	size int64
+	ctx  context.Context // один на все сообщения
 }
 
 func (m Batch) Context() context.Context {

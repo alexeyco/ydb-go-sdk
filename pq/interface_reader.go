@@ -7,7 +7,7 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/backoff"
 )
 
-type Reader struct {
+type ReaderExample struct {
 	stream *ReadStream
 }
 
@@ -40,11 +40,11 @@ func WithReadSelector(readSelector ReadSelector) readerOption {
 	panic("not implemented")
 }
 
-func NewReader(consumer string, readSelectors []ReadSelector) (*Reader, error) {
+func NewReaderExample(consumer string, readSelectors []ReadSelector) (*ReaderExample, error) {
 	return nil, nil
 }
 
-func (r *Reader) Close() error {
+func (r *ReaderExample) Close() error {
 	// check alive
 	// stop send
 	// stop read
@@ -52,29 +52,29 @@ func (r *Reader) Close() error {
 	return nil
 }
 
-func (r *Reader) CloseWithContext(ctx context.Context) {
+func (r *ReaderExample) CloseWithContext(ctx context.Context) {
 	panic("not implemented")
 }
 
 // ReadBatchOption для различных пожеланий к батчу вроде WithMaxMessages(int)
 type ReadBatchOption func()
 
-func (r *Reader) ReadMessageBatch(context.Context, ...ReadBatchOption) (Batch, error) {
+func (r *ReaderExample) ReadMessageBatch(context.Context, ...ReadBatchOption) (Batch, error) {
 	return Batch{}, nil
 }
 
-func (r *Reader) ReadMessage(context.Context) (Message, error) {
+func (r *ReaderExample) ReadMessage(context.Context) (Message, error) {
 	return Message{}, nil
 }
 
-func (r *Reader) Commit(context.Context, ...CommitableByOffset) error {
+func (r *ReaderExample) Commit(context.Context, ...CommitableByOffset) error {
 	// Note: в пределах assign диапазоны оффсетов сообщений собираются на сервере.
 	// Т.е. фактический коммит сообщеинй произойдет когда закоммитятся все предыдущие сообщения.
 	// Это значит что тут может быть минимум логики
 	return nil
 }
 
-func (r *Reader) CommitBatch(ctx context.Context, batch CommitBatch) error {
+func (r *ReaderExample) CommitBatch(ctx context.Context, batch CommitBatch) error {
 	return r.Commit(ctx, batch...)
 }
 
@@ -87,13 +87,13 @@ func DeferMessageCommits(msg ...Message) []CommitableByOffset {
 	return result
 }
 
-func (r *Reader) Stats() ReaderStats {
+func (r *ReaderExample) Stats() ReaderStats {
 	// Нужна настройка и периодические запросы PartitionStreamState
 	// Возвращать из памяти
 	return ReaderStats{}
 }
 
-func (r *Reader) PartitionStreamState(context.Context, PartitionStream) (PartitionStreamState, error) {
+func (r *ReaderExample) PartitionStreamState(context.Context, PartitionStream) (PartitionStreamState, error) {
 	// метод для запроса статуса конкретного стрима с сервера, синхронный
 	return PartitionStreamState{}, nil
 }

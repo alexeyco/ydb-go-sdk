@@ -13,6 +13,8 @@ type Offset int64
 
 type StatusCode int
 
+const StatusOk StatusCode = 1 // TODO: <-- actualize statuses
+
 type StreamReader struct {
 	Stream GrpcStream
 }
@@ -22,11 +24,40 @@ type GrpcStream interface {
 	Recv() (*Ydb_PersQueue_V12.StreamingReadServerMessageNew, error)
 }
 
-func (s StreamReader) Recv() (ServerStreamMessage, error) {
+func (s StreamReader) Close() error {
 	panic("not implemented")
 }
 
-func (s StreamReader) Send(mess ClientStreamMessage) error {
+func (s StreamReader) Recv() (ServerMessage, error) {
+	grpcMess, err := s.Stream.Recv()
+	if err != nil {
+		return nil, err
+	}
+
+	var meta ServerMessageMetadata
+
+	switch m := grpcMess.ServerMessage.(type) {
+	case *Ydb_PersQueue_V12.StreamingReadServerMessageNew_BatchReadResponse_:
+		resp := &ReadResponse{}
+		resp.ServerMessageMetadata = meta
+		resp.Partitions = make([]PartitionData, 0, len(m.BatchReadResponse.Partitions))
+		panic("not implemented")
+		return resp, nil
+	}
+
+	panic("not implemented")
+}
+
+func (s StreamReader) Send(mess ClientMessage) error {
+	switch m := mess.(type) {
+	case *CommitOffsetRequest:
+		grpcMess := &Ydb_PersQueue_V12.StreamingReadClientMessageNew{}
+		grpcMess.ClientMessage = &Ydb_PersQueue_V12.StreamingReadClientMessageNew_CommitRequest_{
+			CommitRequest: &Ydb_PersQueue_V12.StreamingReadClientMessageNew_CommitRequest{Commits: make([]*Ydb_PersQueue_V12.StreamingReadClientMessageNew_PartitionCommit, 0, len(m.Partitions))},
+		}
+		_ = grpcMess
+	}
+
 	panic("not implemented")
 }
 
@@ -34,38 +65,35 @@ func (s StreamReader) Send(mess ClientStreamMessage) error {
 // ClientStreamMessage
 //
 
-type ClientStreamMessage struct {
-	ClientMessage clientMessage
-}
-
-type clientMessage interface {
+type ClientMessage interface {
 	isClientMessage()
 }
 
 type clientMessageImpl struct{}
 
-func (clientMessageImpl) isClientMessage() {}
+func (*clientMessageImpl) isClientMessage() {}
 
-//
-// ServerStreamMessage
-//
-
-type ServerStreamMessage struct {
+type ServerMessageMetadata struct {
 	Status StatusCode
 	Issues []YdbIssueMessage
+}
 
-	ServerMessage serverMessage
+func (s ServerMessageMetadata) StatusData() ServerMessageMetadata {
+	return s
 }
 
 type YdbIssueMessage struct {
 }
 
-type serverMessage interface {
+type ServerMessage interface {
 	isServerMessage()
+	StatusData() ServerMessageMetadata
 }
-type serverMessageImpl struct{}
 
-func (serverMessageImpl) isServerMessage() {}
+type serverMessageImpl struct {
+}
+
+func (*serverMessageImpl) isServerMessage() {}
 
 //
 // StartPartitionSessionRequest
@@ -74,10 +102,12 @@ func (serverMessageImpl) isServerMessage() {}
 type StartPartitionSessionRequest struct {
 	serverMessageImpl
 
+	ServerMessageMetadata
 	PartitionSession PartitionSession
 	CommittedOffset  Offset
 	EndOffset        Offset
 }
+
 type PartitionSession struct {
 	Topic              string
 	PartitionID        int64
@@ -101,6 +131,7 @@ type StartPartitionSessionResponse struct {
 type StopPartitionSessionRequest struct {
 	serverMessageImpl
 
+	ServerMessageMetadata
 	PartitionSessionID PartitionSessionID
 	Graceful           bool
 	CommittedOffset    Offset
@@ -122,27 +153,14 @@ type InitRequest struct {
 	// Topics that will be read by this session.
 	TopicsReadSettings []TopicReadSettings
 
-	// Flag that indicates reading only of original topics in cluster or all including mirrored.
-	ReadOnlyOriginal bool
-
 	// Path of consumer that is used for reading by this session.
 	Consumer string
 
 	// Skip all messages that has write timestamp smaller than now - max_time_lag_ms.
-	MaxLagDurationMs int64
+	MaxLagDuration time.Duration
 
 	// Read data only after this timestamp from all topics.
-	StartFromWrittenAtMs int64
-
-	// Maximum block format version supported by the client. Server will asses this parameter and return actual data blocks version in
-	// StreamingReadServerMessage.InitResponse.block_format_version_by_topic (and StreamingReadServerMessage.AddTopicResponse.block_format_version)
-	// or error if client will not be able to read data.
-	MaxSupportedFormatVersion int64
-
-	// Maximal size of client cache for message_group_id, ip and meta, per partition.
-	// There are separate caches for each partition partition sessions.
-	// There are separate caches for message group identifiers, ip and meta inside one partition session.
-	MaxMetaCacheSize int64
+	StartFromWrittenAt time.Time
 
 	// Session identifier for retries. Must be the same as session_id from Inited server response. If this is first connect, not retry - do not use this field.
 	SessionID string
@@ -177,6 +195,7 @@ type State struct {
 type InitResponse struct {
 	serverMessageImpl
 
+	ServerMessageMetadata
 	SessionID string
 }
 
@@ -193,6 +212,7 @@ type ReadRequest struct {
 type ReadResponse struct {
 	serverMessageImpl
 
+	ServerMessageMetadata
 	Partitions []PartitionData
 }
 type PartitionData struct {
@@ -247,6 +267,7 @@ type OffsetRange struct {
 type CommitOffsetResponse struct {
 	serverMessageImpl
 
+	ServerMessageMetadata
 	Committed []PartitionCommittedOffset
 }
 type PartitionCommittedOffset struct {
@@ -265,6 +286,7 @@ type PartitionSessionStatusRequest struct {
 type PartitionSessionStatusResponse struct {
 	serverMessageImpl
 
+	ServerMessageMetadata
 	PartitionSessionID PartitionSessionID
 	Committed          Offset
 	End                Offset
@@ -282,4 +304,6 @@ type UpdateTokenRequest struct {
 }
 type UpdateTokenResponse struct {
 	serverMessageImpl
+
+	ServerMessageMetadata
 }
