@@ -27,9 +27,10 @@ func encodeTopicSettings(settings pq.StreamSettings, opts ...pq.StreamOption) *p
 		o(&optValues)
 	}
 
+	// TODO: fix
 	return &pqproto.TopicSettings{
-		PartitionsCount:                      int32(settings.PartitionsCount),
-		RetentionPeriodMs:                    settings.RetentionPeriod.Milliseconds(),
+		PartitionsCount: int32(settings.PartitionsCount),
+		//RetentionPeriodMs:                    settings.RetentionPeriod.Milliseconds(),
 		MessageGroupSeqnoRetentionPeriodMs:   settings.MessageGroupSeqnoRetentionPeriod.Milliseconds(),
 		MaxPartitionMessageGroupsSeqnoStored: int64(settings.MaxPartitionMessageGroupsSeqnoStored),
 		SupportedFormat:                      encodeFormat(settings.SupportedFormat),

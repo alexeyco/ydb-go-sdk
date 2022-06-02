@@ -38,6 +38,7 @@ func newReaderPump(stopPump context.Context, bufferSize int64, stream ReaderStre
 		stream:                   stream,
 		cancel:                   cancel,
 		readResponsesParseSignal: make(chan struct{}, 1),
+		messageBatches:           make(chan *Batch),
 	}
 	res.freeBytes <- bufferSize
 	return res
@@ -61,7 +62,7 @@ func (r *readerPump) ReadMessageBatch(ctx context.Context) (*Batch, error) {
 	}
 }
 
-func (r *readerPump) start() error {
+func (r *readerPump) Start() error {
 	if err := r.setStarted(); err != nil {
 		return err
 	}
@@ -72,6 +73,7 @@ func (r *readerPump) start() error {
 
 	go r.readMessagesLoop()
 	go r.dataRequestLoop()
+	go r.dataParseLoop()
 	return nil
 }
 
@@ -91,10 +93,10 @@ func (r *readerPump) initSession() error {
 	mess := pqstreamreader.InitRequest{
 		TopicsReadSettings: []pqstreamreader.TopicReadSettings{
 			{
-				Topic: "test",
+				Topic: "/local/asd",
 			},
 		},
-		Consumer:           "",
+		Consumer:           "test",
 		MaxLagDuration:     0,
 		StartFromWrittenAt: time.Time{},
 		SessionID:          "",
@@ -112,7 +114,7 @@ func (r *readerPump) initSession() error {
 		return err
 	}
 
-	if status := resp.StatusData(); status.Status != pqstreamreader.StatusOk {
+	if status := resp.StatusData(); status.Status != pqstreamreader.StatusSuccess {
 		return xerrors.WithStackTrace(fmt.Errorf("bad status on initial error: %v (%v)", status.Status, status.Issues))
 	}
 
@@ -134,7 +136,7 @@ func (r *readerPump) readMessagesLoop() {
 		}
 
 		status := serverMessage.StatusData()
-		if status.Status != pqstreamreader.StatusOk {
+		if status.Status != pqstreamreader.StatusSuccess {
 			// TODO: actualize error message
 			r.close(xerrors.WithStackTrace(fmt.Errorf("bad status from pq grpc stream: %v", status.Status)))
 		}
@@ -143,7 +145,7 @@ func (r *readerPump) readMessagesLoop() {
 		case *pqstreamreader.ReadResponse:
 			r.onReadResponse(m)
 		case *pqstreamreader.StartPartitionSessionRequest:
-
+			r.onStartPartitionSessionRequest(m)
 		default:
 			r.close(xerrors.WithStackTrace(fmt.Errorf("receive unexpected message: %#v (%v)", m, reflect.TypeOf(m))))
 		}
@@ -254,4 +256,8 @@ func (r *readerPump) onStartPartitionSessionRequest(mess *pqstreamreader.StartPa
 	if err != nil {
 		r.close(err)
 	}
+}
+
+func TestCreatePump(ctx context.Context, stream ReaderStream) *readerPump {
+	return newReaderPump(ctx, 1024*1024*1024, stream)
 }

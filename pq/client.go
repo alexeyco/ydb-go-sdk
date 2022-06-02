@@ -93,9 +93,10 @@ type StreamInfo struct {
 }
 
 func (ss *StreamSettings) From(y *Ydb_PersQueue_V1.TopicSettings) {
+	// TODO: fix
+
 	*ss = StreamSettings{
 		PartitionsCount:                      int(y.PartitionsCount),
-		RetentionPeriod:                      time.Duration(y.RetentionPeriodMs) * time.Millisecond,
 		MessageGroupSeqnoRetentionPeriod:     time.Duration(y.MessageGroupSeqnoRetentionPeriodMs) * time.Millisecond,
 		MaxPartitionMessageGroupsSeqnoStored: int(y.MaxPartitionMessageGroupsSeqnoStored),
 		SupportedCodecs:                      decodeCodecs(y.SupportedCodecs),

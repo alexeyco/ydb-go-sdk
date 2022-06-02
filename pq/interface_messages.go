@@ -2,12 +2,15 @@ package pq
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ipq/pqstreamreader"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
 )
 
 var (
@@ -109,11 +112,24 @@ var (
 )
 
 func createReader(codec pqstreamreader.Codec, rawBytes []byte) io.Reader {
-	if codec != pqstreamreader.CodecRaw {
-		return errorReader{err: ErrUnexpectedCodec}
+	switch codec {
+	case pqstreamreader.CodecRaw:
+		return bytes.NewReader(rawBytes)
+	case pqstreamreader.CodecGzip:
+		gzipReader, err := gzip.NewReader(bytes.NewReader(rawBytes))
+		if err != nil {
+			return errorReader{err: xerrors.WithStackTrace(fmt.Errorf("failed read gzip message: %w", err))}
+		}
+
+		gzipReader2, _ := gzip.NewReader(bytes.NewReader(rawBytes))
+		content, _ := io.ReadAll(gzipReader2)
+		contentS := string(content)
+		_ = contentS
+		return gzipReader
+	default:
+		return errorReader{err: xerrors.WithStackTrace(fmt.Errorf("received message with codec '%v': %w", codec, ErrUnexpectedCodec))}
 	}
 
-	return bytes.NewReader(rawBytes)
 }
 
 type errorReader struct {

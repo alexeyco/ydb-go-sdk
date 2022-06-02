@@ -1,36 +1,74 @@
 package pqstreamreader
 
 import (
+	"fmt"
 	"time"
 
-	Ydb_PersQueue_V12 "github.com/ydb-platform/ydb-go-genproto/protos/Ydb_PersQueue_V1"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_PersQueue_V1"
+
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
 )
 
 type Codec int
+
+func (c *Codec) fromProto(codec Ydb_PersQueue_V1.Codec) {
+	*c = Codec(codec)
+}
 
 const (
 	CodecAuto Codec = -1
 )
 
 const (
-	CodecUnknown Codec = iota
-	CodecRaw
+	CodecCODEC_UNSPECIFIED Codec = iota
+	CodecRaw               Codec = 1
+	CodecGzip              Codec = 2
 )
 
-type PartitionSessionID int64
+type PartitionSessionID struct {
+	v int64
+}
+
+func (id *PartitionSessionID) FromInt64(v int64) {
+	id.v = v
+}
+
+func (id PartitionSessionID) ToInt64() int64 {
+	return id.v
+}
+
 type Offset int64
 
+func (offset *Offset) FromInt64(v int64) {
+	*offset = Offset(v)
+}
+
+func (offset Offset) ToInt64() int64 {
+	return int64(offset)
+}
+
+// StatusCode value may be any value from grpc proto, not enumerated here only
 type StatusCode int
 
-const StatusOk StatusCode = 1 // TODO: <-- actualize statuses
+const (
+	StatusSuccess = StatusCode(Ydb.StatusIds_SUCCESS)
+)
+
+func (s *StatusCode) fromProto(p Ydb.StatusIds_StatusCode) {
+	*s = StatusCode(p)
+}
+func (s StatusCode) IsSuccess() bool {
+	return s == StatusSuccess
+}
 
 type StreamReader struct {
 	Stream GrpcStream
 }
 
 type GrpcStream interface {
-	Send(messageNew *Ydb_PersQueue_V12.StreamingReadClientMessageNew) error
-	Recv() (*Ydb_PersQueue_V12.StreamingReadServerMessageNew, error)
+	Send(messageNew *Ydb_PersQueue_V1.StreamingReadClientMessage) error
+	Recv() (*Ydb_PersQueue_V1.StreamingReadServerMessage, error)
 }
 
 func (s StreamReader) Close() error {
@@ -44,27 +82,54 @@ func (s StreamReader) Recv() (ServerMessage, error) {
 	}
 
 	var meta ServerMessageMetadata
+	meta.metaFromProto(grpcMess)
+	if !meta.Status.IsSuccess() {
+		return nil, xerrors.WithStackTrace(fmt.Errorf("bad status from pq server: %v", meta.Status))
+	}
 
 	switch m := grpcMess.ServerMessage.(type) {
-	case *Ydb_PersQueue_V12.StreamingReadServerMessageNew_BatchReadResponse_:
+	case *Ydb_PersQueue_V1.StreamingReadServerMessage_InitResponse_:
+		resp := &InitResponse{}
+		resp.ServerMessageMetadata = meta
+		resp.fromProto(m.InitResponse)
+		return resp, nil
+	case *Ydb_PersQueue_V1.StreamingReadServerMessage_StartPartitionSessionRequest_:
+		resp := &StartPartitionSessionRequest{}
+		resp.ServerMessageMetadata = meta
+		resp.fromProto(m.StartPartitionSessionRequest)
+		return resp, nil
+	case *Ydb_PersQueue_V1.StreamingReadServerMessage_ReadResponse_:
 		resp := &ReadResponse{}
 		resp.ServerMessageMetadata = meta
-		resp.Partitions = make([]PartitionData, 0, len(m.BatchReadResponse.Partitions))
-		panic("not implemented")
+		if err := resp.fromProto(m.ReadResponse); err != nil {
+			return nil, err
+		}
 		return resp, nil
 	}
 
-	panic("not implemented")
+	panic(fmt.Errorf("not implemented: %#v", grpcMess.ServerMessage))
 }
 
 func (s StreamReader) Send(mess ClientMessage) error {
 	switch m := mess.(type) {
-	case *CommitOffsetRequest:
-		grpcMess := &Ydb_PersQueue_V12.StreamingReadClientMessageNew{}
-		grpcMess.ClientMessage = &Ydb_PersQueue_V12.StreamingReadClientMessageNew_CommitRequest_{
-			CommitRequest: &Ydb_PersQueue_V12.StreamingReadClientMessageNew_CommitRequest{Commits: make([]*Ydb_PersQueue_V12.StreamingReadClientMessageNew_PartitionCommit, 0, len(m.Partitions))},
+	case *InitRequest:
+		grpcMess := &Ydb_PersQueue_V1.StreamingReadClientMessage{
+			ClientMessage: &Ydb_PersQueue_V1.StreamingReadClientMessage_InitRequest_{InitRequest: m.toProto()},
 		}
-		_ = grpcMess
+		return s.Stream.Send(grpcMess)
+	case *ReadRequest:
+		grpcMess := &Ydb_PersQueue_V1.StreamingReadClientMessage{
+			ClientMessage: &Ydb_PersQueue_V1.StreamingReadClientMessage_ReadRequest_{ReadRequest: m.toProto()},
+		}
+		return s.Stream.Send(grpcMess)
+	case *StartPartitionSessionResponse:
+		grpcMess := &Ydb_PersQueue_V1.StreamingReadClientMessage{
+			ClientMessage: &Ydb_PersQueue_V1.StreamingReadClientMessage_StartPartitionSessionResponse_{StartPartitionSessionResponse: m.toProto()},
+		}
+		return s.Stream.Send(grpcMess)
+
+	default:
+		// TODO: return error
 	}
 
 	panic("not implemented")
@@ -85,6 +150,11 @@ func (*clientMessageImpl) isClientMessage() {}
 type ServerMessageMetadata struct {
 	Status StatusCode
 	Issues []YdbIssueMessage
+}
+
+func (m *ServerMessageMetadata) metaFromProto(p *Ydb_PersQueue_V1.StreamingReadServerMessage) {
+	m.Status.fromProto(p.Status)
+	// TODO
 }
 
 func (s ServerMessageMetadata) StatusData() ServerMessageMetadata {
@@ -117,6 +187,14 @@ type StartPartitionSessionRequest struct {
 	EndOffset        Offset
 }
 
+func (r *StartPartitionSessionRequest) fromProto(p *Ydb_PersQueue_V1.StreamingReadServerMessage_StartPartitionSessionRequest) {
+	r.PartitionSession.PartitionID = p.PartitionSession.PartitionId
+	r.PartitionSession.Topic = p.PartitionSession.Topic
+	r.PartitionSession.PartitionSessionID.FromInt64(p.PartitionSession.PartitionSessionId)
+	r.CommittedOffset.FromInt64(p.CommittedOffset)
+	r.EndOffset.FromInt64(p.EndOffset)
+}
+
 type PartitionSession struct {
 	Topic              string
 	PartitionID        int64
@@ -131,6 +209,19 @@ type StartPartitionSessionResponse struct {
 	ReadOffsetUse      bool // ReadOffset used only if ReadOffsetUse=true to distinguish zero and unset variables
 	CommitOffset       Offset
 	CommitOffsetUse    bool // CommitOffset used only if CommitOffsetUse=true to distinguish zero and unset variables
+}
+
+func (r *StartPartitionSessionResponse) toProto() *Ydb_PersQueue_V1.StreamingReadClientMessage_StartPartitionSessionResponse {
+	res := &Ydb_PersQueue_V1.StreamingReadClientMessage_StartPartitionSessionResponse{
+		PartitionSessionId: r.PartitionSessionID.ToInt64(),
+	}
+	if r.ReadOffsetUse {
+		res.ReadOffset = r.ReadOffset.ToInt64()
+	}
+	if r.CommitOffsetUse {
+		res.CommitOffset = r.CommitOffset.ToInt64()
+	}
+	return res
 }
 
 //
@@ -182,13 +273,41 @@ type InitRequest struct {
 
 	IdleTimeoutMs int64
 }
+
+func (g *InitRequest) toProto() *Ydb_PersQueue_V1.StreamingReadClientMessage_InitRequest {
+	p := &Ydb_PersQueue_V1.StreamingReadClientMessage_InitRequest{
+		TopicsReadSettings:        nil,
+		Consumer:                  g.Consumer,
+		MaxLagDurationMs:          g.MaxLagDuration.Milliseconds(),
+		MaxSupportedFormatVersion: 0,
+		MaxMetaCacheSize:          1024 * 1024 * 1024, // TODO: fix
+		IdleTimeoutMs:             time.Minute.Milliseconds(),
+	}
+	if startFromMs := g.StartFromWrittenAt.UnixMilli(); startFromMs >= 0 {
+		p.StartFromWrittenAtMs = startFromMs
+	}
+
+	p.TopicsReadSettings = make([]*Ydb_PersQueue_V1.StreamingReadClientMessage_TopicReadSettings, 0, len(g.TopicsReadSettings))
+	for _, gSettings := range g.TopicsReadSettings {
+		pSettings := &Ydb_PersQueue_V1.StreamingReadClientMessage_TopicReadSettings{
+			Topic: gSettings.Topic,
+		}
+		pSettings.PartitionGroupIds = make([]int64, 0, len(gSettings.PartitionsID))
+		for _, partitionID := range gSettings.PartitionsID {
+			pSettings.PartitionGroupIds = append(pSettings.PartitionGroupIds, partitionID+1)
+		}
+		p.TopicsReadSettings = append(p.TopicsReadSettings, pSettings)
+	}
+	return p
+}
+
 type TopicReadSettings struct {
 	// Topic path.
 	Topic string
 
-	// Partition groups that will be read by this session.
+	// Partitions id that will be read by this session.
 	// If list is empty - then session will read all partition groups.
-	PartitionGroupsID []int64
+	PartitionsID []int64
 
 	// Read data only after this timestamp from this topic.
 	StartFromWritten time.Time
@@ -208,6 +327,11 @@ type InitResponse struct {
 	SessionID string
 }
 
+func (g *InitResponse) fromProto(p *Ydb_PersQueue_V1.StreamingReadServerMessage_InitResponse) {
+	g.SessionID = p.SessionId
+	return
+}
+
 //
 // ReadRequest
 //
@@ -218,12 +342,70 @@ type ReadRequest struct {
 	BytesSize int64
 }
 
+func (r *ReadRequest) toProto() *Ydb_PersQueue_V1.StreamingReadClientMessage_ReadRequest {
+	return &Ydb_PersQueue_V1.StreamingReadClientMessage_ReadRequest{
+		RequestUncompressedSize: r.BytesSize,
+	}
+}
+
 type ReadResponse struct {
 	serverMessageImpl
 
 	ServerMessageMetadata
 	Partitions []PartitionData
 }
+
+func (r *ReadResponse) fromProto(p *Ydb_PersQueue_V1.StreamingReadServerMessage_ReadResponse) error {
+	r.Partitions = make([]PartitionData, len(p.PartitionData))
+	for partitionIndex := range p.PartitionData {
+		dstPartition := &r.Partitions[partitionIndex]
+		srcPartition := p.PartitionData[partitionIndex]
+		if srcPartition == nil {
+			return xerrors.WithStackTrace(fmt.Errorf("unexpected nil partition data"))
+		}
+
+		dstPartition.PartitionSessionID.FromInt64(srcPartition.PartitionSessionId)
+		dstPartition.Batches = make([]Batch, len(srcPartition.Batches))
+
+		for batchIndex := range srcPartition.Batches {
+			dstBatch := &dstPartition.Batches[batchIndex]
+			srcBatch := srcPartition.Batches[batchIndex]
+			if srcBatch == nil {
+				return xerrors.WithStackTrace(fmt.Errorf("unexpected nil batch"))
+			}
+
+			dstBatch.MessageGroupID = string(srcBatch.MessageGroupId)
+			dstBatch.WriteTimeStamp = time.UnixMilli(srcBatch.WriteTimestampMs)
+
+			if srcMeta := srcBatch.GetSessionMeta().GetValue(); len(srcMeta) > 0 {
+				dstBatch.SessionMeta = make(map[string]string, len(srcMeta))
+				for key, val := range srcMeta {
+					dstBatch.SessionMeta[key] = val
+				}
+			}
+
+			dstBatch.Messages = make([]MessageData, len(srcBatch.MessageData))
+			for messageIndex := range srcBatch.MessageData {
+				dstMess := &dstBatch.Messages[messageIndex]
+				srcMess := srcBatch.MessageData[messageIndex]
+				if srcMess == nil {
+					return xerrors.WithStackTrace(fmt.Errorf("unexpected nil message"))
+				}
+
+				dstMess.Offset.FromInt64(srcMess.Offset)
+				dstMess.SeqNo = srcMess.SeqNo
+				dstMess.Created = time.UnixMilli(srcMess.CreateTimestampMs)
+				dstMess.Codec.fromProto(srcMess.Codec)
+				dstMess.Data = srcMess.Data
+				dstMess.UncompressedSize = srcMess.UncompressedSize
+				dstMess.PartitionKey = srcMess.PartitionKey
+				dstMess.ExplicitHash = srcMess.ExplicitHash
+			}
+		}
+	}
+	return nil
+}
+
 type PartitionData struct {
 	PartitionSessionID PartitionSessionID
 
@@ -231,7 +413,7 @@ type PartitionData struct {
 }
 type Batch struct {
 	MessageGroupID string
-	SessionMeta    map[string]string
+	SessionMeta    map[string]string // nil if session meta is empty
 	WriteTimeStamp time.Time
 	WriterIP       string
 
