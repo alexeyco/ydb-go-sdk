@@ -8,6 +8,15 @@ import (
 
 type Codec int
 
+const (
+	CodecAuto Codec = -1
+)
+
+const (
+	CodecUnknown Codec = iota
+	CodecRaw
+)
+
 type PartitionSessionID int64
 type Offset int64
 
@@ -182,7 +191,7 @@ type TopicReadSettings struct {
 	PartitionGroupsID []int64
 
 	// Read data only after this timestamp from this topic.
-	StartFromWrittenAtMs int64
+	StartFromWritten time.Time
 }
 
 type PartitionSessionState struct {
@@ -216,7 +225,7 @@ type ReadResponse struct {
 	Partitions []PartitionData
 }
 type PartitionData struct {
-	PartitionSessionID int64
+	PartitionSessionID PartitionSessionID
 
 	Batches []Batch
 }
@@ -230,7 +239,7 @@ type Batch struct {
 }
 
 type MessageData struct {
-	Offset int64
+	Offset Offset
 	SeqNo  int64
 
 	// Timestamp of creation of message provided on write from client.

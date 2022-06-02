@@ -2,9 +2,11 @@ package pq
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ipq/pqstreamreader"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
@@ -21,16 +23,17 @@ type readerPump struct {
 	err    error
 
 	readResponsesParseSignal chan struct{}
-	messageBatches           chan Batch
+	messageBatches           chan *Batch
 
 	m             sync.Mutex
+	started       bool
 	readResponses []*pqstreamreader.ReadResponse // use slice instead channel for gurantee receive data without block
 }
 
-func newReaderPump(ctx context.Context, bufferSize int64, stream ReaderStream) *readerPump {
-	ctx, cancel := context.WithCancel(ctx)
+func newReaderPump(stopPump context.Context, bufferSize int64, stream ReaderStream) *readerPump {
+	stopPump, cancel := context.WithCancel(stopPump)
 	res := &readerPump{
-		ctx:                      ctx,
+		ctx:                      stopPump,
 		freeBytes:                make(chan int64, 1),
 		stream:                   stream,
 		cancel:                   cancel,
@@ -40,9 +43,86 @@ func newReaderPump(ctx context.Context, bufferSize int64, stream ReaderStream) *
 	return res
 }
 
-func (r *readerPump) start() {
+func (r *readerPump) ReadMessageBatch(ctx context.Context) (*Batch, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if r.ctx.Err() != nil {
+		return nil, r.ctx.Err()
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-r.ctx.Done():
+		return nil, ctx.Err()
+	case batch := <-r.messageBatches:
+		return batch, nil
+	}
+}
+
+func (r *readerPump) start() error {
+	if err := r.setStarted(); err != nil {
+		return err
+	}
+
+	if err := r.initSession(); err != nil {
+		r.close(err)
+	}
+
 	go r.readMessagesLoop()
 	go r.dataRequestLoop()
+	return nil
+}
+
+func (r *readerPump) setStarted() error {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	if r.started {
+		return xerrors.WithStackTrace(errors.New("already started"))
+	}
+
+	r.started = true
+	return nil
+}
+
+func (r *readerPump) initSession() error {
+	mess := pqstreamreader.InitRequest{
+		TopicsReadSettings: []pqstreamreader.TopicReadSettings{
+			{
+				Topic: "test",
+			},
+		},
+		Consumer:           "",
+		MaxLagDuration:     0,
+		StartFromWrittenAt: time.Time{},
+		SessionID:          "",
+		ConnectionAttempt:  0,
+		State:              pqstreamreader.State{},
+		IdleTimeoutMs:      0,
+	}
+
+	if err := r.stream.Send(&mess); err != nil {
+		return err
+	}
+
+	resp, err := r.stream.Recv()
+	if err != nil {
+		return err
+	}
+
+	if status := resp.StatusData(); status.Status != pqstreamreader.StatusOk {
+		return xerrors.WithStackTrace(fmt.Errorf("bad status on initial error: %v (%v)", status.Status, status.Issues))
+	}
+
+	_, ok := resp.(*pqstreamreader.InitResponse)
+	if !ok {
+		return xerrors.WithStackTrace(fmt.Errorf("bad message type on session init: %v (%v)", resp, reflect.TypeOf(resp)))
+	}
+
+	// TODO: log session id
+	return nil
 }
 
 func (r *readerPump) readMessagesLoop() {
@@ -130,7 +210,23 @@ func (r *readerPump) getFirstReadResponse() (res *pqstreamreader.ReadResponse) {
 }
 
 func (r *readerPump) dataParse(mess *pqstreamreader.ReadResponse) {
-	panic("not implemented")
+	batchesCount := 0
+	for i := range mess.Partitions {
+		batchesCount += len(mess.Partitions[i].Batches)
+	}
+
+	doneChannel := r.ctx.Done()
+	for pIndex := range mess.Partitions {
+		p := &mess.Partitions[pIndex]
+		for bIndex := range p.Batches {
+			select {
+			case r.messageBatches <- NewBatchFromStream(context.TODO(), "topic-todo", -1, p.PartitionSessionID, p.Batches[bIndex]):
+				// pass
+			case <-doneChannel:
+				return
+			}
+		}
+	}
 }
 
 func (r *readerPump) close(err error) {
