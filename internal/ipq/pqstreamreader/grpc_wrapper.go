@@ -30,6 +30,10 @@ type PartitionSessionID struct {
 	v int64
 }
 
+func (id PartitionSessionID) Less(other PartitionSessionID) bool {
+	return id.v < other.v
+}
+
 func (id *PartitionSessionID) FromInt64(v int64) {
 	id.v = v
 }
@@ -339,12 +343,12 @@ func (g *InitResponse) fromProto(p *Ydb_PersQueue_V1.StreamingReadServerMessage_
 type ReadRequest struct {
 	clientMessageImpl
 
-	BytesSize int64
+	BytesSize int
 }
 
 func (r *ReadRequest) toProto() *Ydb_PersQueue_V1.StreamingReadClientMessage_ReadRequest {
 	return &Ydb_PersQueue_V1.StreamingReadClientMessage_ReadRequest{
-		RequestUncompressedSize: r.BytesSize,
+		RequestUncompressedSize: int64(r.BytesSize),
 	}
 }
 
@@ -417,7 +421,8 @@ type Batch struct {
 	WriteTimeStamp time.Time
 	WriterIP       string
 
-	Messages []MessageData
+	Messages  []MessageData
+	SizeBytes int
 }
 
 type MessageData struct {
@@ -442,7 +447,7 @@ type MessageData struct {
 type CommitOffsetRequest struct {
 	clientMessageImpl
 
-	Partitions []PartitionCommitOffset
+	PartitionsOffsets []PartitionCommitOffset
 }
 type PartitionCommitOffset struct {
 	PartitionSessionID PartitionSessionID

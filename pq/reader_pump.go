@@ -8,37 +8,43 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ictx"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ipq/pqstreamreader"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
 )
 
+var errGracefulShutdownPartition = xerrors.Wrap(errors.New("graceful shutdown partition"))
+var errPartitionStopped = xerrors.Wrap(errors.New("partition stopped"))
+
+type partitionSessionID = pqstreamreader.PartitionSessionID
+
 type readerPump struct {
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel ictx.CancelErrFunc
 
-	freeBytes chan int64
+	freeBytes chan int
 	stream    ReaderStream
-
-	setErr sync.Once
-	err    error
 
 	readResponsesParseSignal chan struct{}
 	messageBatches           chan *Batch
 
-	m             sync.Mutex
+	m             sync.RWMutex
+	err           error
 	started       bool
-	readResponses []*pqstreamreader.ReadResponse // use slice instead channel for gurantee receive data without block
+	readResponses []*pqstreamreader.ReadResponse // use slice instead channel for guarantee read grpc stream without block
+	sessions      map[partitionSessionID]*partitionSessionData
 }
 
-func newReaderPump(stopPump context.Context, bufferSize int64, stream ReaderStream) *readerPump {
-	stopPump, cancel := context.WithCancel(stopPump)
+func newReaderPump(stopPump context.Context, bufferSize int, stream ReaderStream) *readerPump {
+	stopPump, cancel := ictx.WithErrCancel(stopPump)
 	res := &readerPump{
 		ctx:                      stopPump,
-		freeBytes:                make(chan int64, 1),
+		freeBytes:                make(chan int, 1),
 		stream:                   stream,
 		cancel:                   cancel,
 		readResponsesParseSignal: make(chan struct{}, 1),
 		messageBatches:           make(chan *Batch),
+		sessions:                 map[pqstreamreader.PartitionSessionID]*partitionSessionData{},
 	}
 	res.freeBytes <- bufferSize
 	return res
@@ -58,8 +64,16 @@ func (r *readerPump) ReadMessageBatch(ctx context.Context) (*Batch, error) {
 	case <-r.ctx.Done():
 		return nil, ctx.Err()
 	case batch := <-r.messageBatches:
+		r.freeBytes <- batch.sizeBytes
 		return batch, nil
 	}
+}
+
+func (r *readerPump) Commit(ctx context.Context, offset CommitBatch) error {
+	req := &pqstreamreader.CommitOffsetRequest{
+		PartitionsOffsets: offset.toPartitionsOffsets(),
+	}
+	return r.stream.Send(req)
 }
 
 func (r *readerPump) Start() error {
@@ -145,7 +159,20 @@ func (r *readerPump) readMessagesLoop() {
 		case *pqstreamreader.ReadResponse:
 			r.onReadResponse(m)
 		case *pqstreamreader.StartPartitionSessionRequest:
-			r.onStartPartitionSessionRequest(m)
+			if err = r.onStartPartitionSessionRequest(m); err != nil {
+				r.close(err)
+				return
+			}
+		case *pqstreamreader.StopPartitionSessionRequest:
+			if err = r.onStopPartitionSessionRequest(m); err != nil {
+				r.close(err)
+				return
+			}
+		case *pqstreamreader.CommitOffsetResponse:
+			if err = r.onCommitResponse(m); err != nil {
+				r.close(err)
+				return
+			}
 		default:
 			r.close(xerrors.WithStackTrace(fmt.Errorf("receive unexpected message: %#v (%v)", m, reflect.TypeOf(m))))
 		}
@@ -164,6 +191,7 @@ func (r *readerPump) dataRequestLoop() {
 		case <-doneChan:
 			r.close(r.ctx.Err())
 			return
+
 		case free := <-r.freeBytes:
 			err := r.stream.Send(&pqstreamreader.ReadRequest{BytesSize: free})
 			if err != nil {
@@ -232,10 +260,29 @@ func (r *readerPump) dataParse(mess *pqstreamreader.ReadResponse) {
 }
 
 func (r *readerPump) close(err error) {
-	r.setErr.Do(func() {
-		r.err = err
-		r.cancel()
-	})
+	r.m.Lock()
+	defer r.m.Lock()
+
+	if r.err != nil {
+		return
+	}
+
+	r.err = err
+	r.cancel(err)
+}
+
+func (r *readerPump) onCommitResponse(mess *pqstreamreader.CommitOffsetResponse) error {
+	for i := range mess.Committed {
+		commit := &mess.Committed[i]
+		err := r.sessionModify(commit.PartitionSessionID, func(p *partitionSessionData) {
+			p.commitOffsetNotify(commit.Committed, nil)
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *readerPump) onReadResponse(mess *pqstreamreader.ReadResponse) {
@@ -250,12 +297,120 @@ func (r *readerPump) onReadResponse(mess *pqstreamreader.ReadResponse) {
 	}
 }
 
-func (r *readerPump) onStartPartitionSessionRequest(mess *pqstreamreader.StartPartitionSessionRequest) {
+func (r *readerPump) onStartPartitionSessionRequest(mess *pqstreamreader.StartPartitionSessionRequest) error {
 	// TODO: improve handler
+	// TODO: add user handler
+
+	data := newPartitionSessionData(r.ctx, mess)
+
+	if err := r.sessionAdd(mess.PartitionSession.PartitionSessionID, data); err != nil {
+		return err
+	}
+
 	err := r.stream.Send(&pqstreamreader.StartPartitionSessionResponse{PartitionSessionID: mess.PartitionSession.PartitionSessionID})
 	if err != nil {
 		r.close(err)
 	}
+	return nil
+}
+
+func (r *readerPump) onStopPartitionSessionRequest(mess *pqstreamreader.StopPartitionSessionRequest) error {
+	if mess.Graceful {
+		err := r.sessionModify(mess.PartitionSessionID, func(p *partitionSessionData) {
+			p.nofityGraceful()
+		})
+		return err
+	}
+
+	if data, err := r.sessionDel(mess.PartitionSessionID); err == nil {
+		data.close(errPartitionStopped)
+	} else {
+		return err
+	}
+
+	return nil
+}
+
+func (r *readerPump) sessionAdd(id partitionSessionID, data *partitionSessionData) error {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	if _, ok := r.sessions[id]; ok {
+		return xerrors.WithStackTrace(fmt.Errorf("session id already existed: %v", id))
+	}
+	r.sessions[id] = data
+	return nil
+}
+
+func (r *readerPump) sessionDel(id partitionSessionID) (*partitionSessionData, error) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	if data, ok := r.sessions[id]; ok {
+		delete(r.sessions, id)
+		return data, nil
+	}
+	return nil, xerrors.WithStackTrace(fmt.Errorf("delete undefined partition session: %v", id))
+}
+func (r *readerPump) sessionModify(id partitionSessionID, callback func(p *partitionSessionData)) error {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	if p, ok := r.sessions[id]; ok {
+		callback(p)
+		return nil
+	}
+
+	return xerrors.WithStackTrace(fmt.Errorf("modify unexpectet session id: %v", id))
+}
+
+type partitionSessionData struct {
+	Topic       string
+	PartitionID int64
+
+	graceful       context.Context
+	gracefulCancel ictx.CancelErrFunc
+	alive          context.Context
+	aliveCancel    ictx.CancelErrFunc
+	commitWaiters  []commitWaiter
+}
+
+func newPartitionSessionData(readerCtx context.Context, mess *pqstreamreader.StartPartitionSessionRequest) *partitionSessionData {
+	res := &partitionSessionData{
+		Topic:       mess.PartitionSession.Topic,
+		PartitionID: mess.PartitionSession.PartitionID,
+	}
+
+	res.graceful, res.gracefulCancel = ictx.WithErrCancel(context.Background())
+	res.alive, res.aliveCancel = ictx.WithErrCancel(readerCtx)
+	return res
+}
+
+func (p *partitionSessionData) commitOffsetNotify(offset pqstreamreader.Offset, err error) {
+	newWaiters := p.commitWaiters[:0]
+	for i := range p.commitWaiters {
+		waiter := &p.commitWaiters[i]
+		if waiter.offset <= offset {
+			waiter.notify(err)
+		} else {
+			newWaiters = append(newWaiters, *waiter)
+		}
+	}
+	p.commitWaiters = newWaiters
+}
+func (p *partitionSessionData) nofityGraceful() {
+	p.gracefulCancel(errGracefulShutdownPartition)
+}
+func (p *partitionSessionData) close(err error) {
+	p.aliveCancel(err)
+	for _, waiter := range p.commitWaiters {
+		waiter.notify(err)
+	}
+}
+
+type commitWaiter struct {
+	offset pqstreamreader.Offset
+	notify func(error)
 }
 
 func TestCreatePump(ctx context.Context, stream ReaderStream) *readerPump {

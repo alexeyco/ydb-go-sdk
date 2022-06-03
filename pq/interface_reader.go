@@ -67,20 +67,19 @@ func (r *ReaderExample) ReadMessage(context.Context) (Message, error) {
 	return Message{}, nil
 }
 
-func (r *ReaderExample) Commit(context.Context, ...CommitableByOffset) error {
-	// Note: в пределах assign диапазоны оффсетов сообщений собираются на сервере.
-	// Т.е. фактический коммит сообщеинй произойдет когда закоммитятся все предыдущие сообщения.
-	// Это значит что тут может быть минимум логики
-	return nil
+func (r *ReaderExample) Commit(ctx context.Context, commits ...CommitableByOffset) error {
+	batch := make(CommitBatch, 0, len(commits))
+	batch.Append(commits...)
+	return r.CommitBatch(ctx, batch)
 }
 
 func (r *ReaderExample) CommitBatch(ctx context.Context, batch CommitBatch) error {
-	return r.Commit(ctx, batch...)
+	panic("not implemented")
 }
 
-func DeferMessageCommits(msg ...Message) []CommitableByOffset {
+func DeferMessageCommits(msg ...Message) []CommitOffset {
 	// кажется тут можно сразу собрать интервалы оффсетов
-	result := make([]CommitableByOffset, len(msg))
+	result := make([]CommitOffset, len(msg))
 	for i := range msg {
 		result[i] = msg[i].CommitOffset
 	}

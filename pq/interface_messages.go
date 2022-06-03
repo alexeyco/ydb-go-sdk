@@ -53,7 +53,8 @@ var (
 type CommitOffset struct { // Кусочек, необходимый для коммита сообщения
 	Offset   pqstreamreader.Offset
 	ToOffset pqstreamreader.Offset
-	assignID pqstreamreader.PartitionSessionID
+
+	partitionSessionID pqstreamreader.PartitionSessionID
 }
 
 func (c CommitOffset) GetCommitOffset() CommitOffset {
@@ -69,17 +70,18 @@ type Batch struct {
 
 	CommitOffset // от всех сообщений батча
 
-	size int
-	ctx  context.Context // один на все сообщения
+	sizeBytes int
+	ctx       context.Context // один на все сообщения
 }
 
 func NewBatchFromStream(batchContext context.Context, stream string, partitionNum int64, sessionID pqstreamreader.PartitionSessionID, sb pqstreamreader.Batch) *Batch {
 	var res Batch
-	res.Messages = make([]Message, 0, len(sb.Messages))
+	res.sizeBytes = sb.SizeBytes
+	res.Messages = make([]Message, len(sb.Messages))
 
 	if len(sb.Messages) > 0 {
 		commitOffset := &res.CommitOffset
-		commitOffset.assignID = sessionID
+		commitOffset.partitionSessionID = sessionID
 		commitOffset.Offset = sb.Messages[0].Offset
 		commitOffset.ToOffset = sb.Messages[len(sb.Messages)-1].Offset + 1
 	}
@@ -87,7 +89,7 @@ func NewBatchFromStream(batchContext context.Context, stream string, partitionNu
 	for i := range sb.Messages {
 		sMess := &sb.Messages[i]
 
-		var cMess Message
+		cMess := &res.Messages[i]
 		cMess.Stream = stream
 		cMess.IP = sb.WriterIP
 		cMess.Partition = partitionNum
@@ -97,7 +99,7 @@ func NewBatchFromStream(batchContext context.Context, stream string, partitionNu
 		messData.SeqNo = sMess.SeqNo
 		messData.CreatedAt = sMess.Created
 		messData.Data = createReader(sMess.Codec, sMess.Data)
-		res.size += len(sMess.Data)
+		res.sizeBytes += len(sMess.Data)
 	}
 
 	return &res

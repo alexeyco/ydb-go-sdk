@@ -2,6 +2,7 @@ package pq_test
 
 import (
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -29,5 +30,12 @@ func TestInit(t *testing.T) {
 
 	pump := pq.TestCreatePump(ctx, pqstreamreader.StreamReader{Stream: grpcStream})
 	require.NoError(t, pump.Start())
-	time.Sleep(time.Hour)
+	batch, err := pump.ReadMessageBatch(ctx)
+	require.NoError(t, err)
+	for _, mess := range batch.Messages {
+		data, err := io.ReadAll(mess.Data)
+		require.NoError(t, err)
+		t.Log(string(data))
+	}
+	time.Sleep(time.Second)
 }
