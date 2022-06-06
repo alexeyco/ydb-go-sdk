@@ -9,12 +9,14 @@ import (
 	"io"
 	"time"
 
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ictx"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ipq/pqstreamreader"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
 )
 
 var (
-	ErrUnexpectedCodec = errors.New("unexpected codec")
+	ErrUnexpectedCodec          = errors.New("unexpected codec")
+	ErrContextExplicitCancelled = errors.New("context explicit cancelled")
 )
 
 type SizeReader interface {
@@ -70,8 +72,9 @@ type Batch struct {
 
 	CommitOffset // от всех сообщений батча
 
-	sizeBytes int
-	ctx       context.Context // один на все сообщения
+	sizeBytes                        int
+	partitionContext                 context.Context // один на все сообщения
+	partitionGracefulShutdownChannel <-chan struct{}
 }
 
 func NewBatchFromStream(batchContext context.Context, stream string, partitionNum int64, sessionID pqstreamreader.PartitionSessionID, sb pqstreamreader.Batch) *Batch {
@@ -105,8 +108,17 @@ func NewBatchFromStream(batchContext context.Context, stream string, partitionNu
 	return &res
 }
 
-func (m Batch) Context() context.Context {
-	return m.ctx
+func (m Batch) WithBatchDealine(ctx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancelFunc := ictx.Merge(ctx, m.partitionContext)
+	return ctx, func() { cancelFunc(ErrContextExplicitCancelled) }
+}
+
+// PartitionSessionGracefulShutdown return channel, that will close, whe SDK receive signal about graceful shutdown partition
+// channel may be closed never, for example if connection broken or server force shutdown partition
+// Close of the channel is signal mean about server will not send more messages in the session
+// User have some time to finish work with received messaged and commit it.
+func (m Batch) PartitionSessionGracefulShutdown() <-chan struct{} {
+	return m.partitionGracefulShutdownChannel
 }
 
 var (

@@ -21,9 +21,9 @@ const (
 )
 
 const (
-	CodecCODEC_UNSPECIFIED Codec = iota
-	CodecRaw               Codec = 1
-	CodecGzip              Codec = 2
+	CodecUNSPECIFIED Codec = iota
+	CodecRaw         Codec = 1
+	CodecGzip        Codec = 2
 )
 
 type PartitionSessionID struct {
