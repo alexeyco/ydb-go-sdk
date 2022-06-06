@@ -1,3 +1,40 @@
+## v3.26.9
+* Fixed bug with convert ydb value to `time.Duration` in `result.Scan[WithDefaults,Named]()`
+* Fixed bug with make ydb value from `time.Duration` in `types.IntervalValueFromDuration(d)`
+* Marked `table/types.{IntervalValue,NullableIntervalValue}` as deprecated 
+
+## v3.26.8
+* Removed the processing of trailer metadata on stream calls 
+
+## v3.26.7
+* Updated the `ydb-go-genproto` dependency
+
+## v3.26.6
+* Defined the `SerializableReadWrite` isolation level by default in `db.Table.DoTx(ctx, func(ctx, tx))` 
+* Updated the `ydb-go-genproto` dependency
+
+## v3.26.5
+* Disabled the `KeepInCache` policy for queries without params
+
+## v3.26.4
+* Updated the indirect dependency to `gopkg.in/yaml.v3`
+
+## v3.26.3
+* Removed `Deprecated` mark from `table/session.Prepare` method
+* Added comments for `table/session.Execute` method
+
+## v3.26.2
+* Refactored of making permissions from scheme entry
+
+## v3.26.1
+* Removed deprecated traces
+
+## v3.26.0
+* Fixed data race on session stream queries
+* Renamed `internal/router` package to `internal/balancer` for unambiguous understanding of package mission
+* Implemented detection of local data-center with measuring tcp dial RTT
+* Added `trace.Driver.OnBalancer{Init,Close,ChooseEndpoint,Update}` events
+* Marked the driver cluster events as deprecated  
 * Simplified the balancing logic
 
 ## v3.25.3

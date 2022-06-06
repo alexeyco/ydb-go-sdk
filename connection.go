@@ -13,13 +13,13 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/coordination"
 	"github.com/ydb-platform/ydb-go-sdk/v3/discovery"
+	"github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/conn"
 	internalCoordination "github.com/ydb-platform/ydb-go-sdk/v3/internal/coordination"
 	coordinationConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/coordination/config"
 	discoveryConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/discovery/config"
 	internalRatelimiter "github.com/ydb-platform/ydb-go-sdk/v3/internal/ratelimiter"
 	ratelimiterConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/ratelimiter/config"
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/router"
 	internalScheme "github.com/ydb-platform/ydb-go-sdk/v3/internal/scheme"
 	schemeConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/scheme/config"
 	internalScripting "github.com/ydb-platform/ydb-go-sdk/v3/internal/scripting"
@@ -114,8 +114,8 @@ type connection struct {
 
 	pool *conn.Pool
 
-	mtx    sync.Mutex
-	router router.Connection
+	mtx      sync.Mutex
+	balancer balancer.Connection
 
 	children    map[uint64]Connection
 	childrenMtx sync.Mutex
@@ -186,7 +186,7 @@ func (c *connection) Close(ctx context.Context) error {
 			}
 			return c.persqueue.Close(ctx)
 		},
-		c.router.Close,
+		c.balancer.Close,
 		c.pool.Release,
 	)
 
@@ -211,7 +211,7 @@ func (c *connection) Invoke(
 	reply interface{},
 	opts ...grpc.CallOption,
 ) (err error) {
-	return c.router.Invoke(
+	return c.balancer.Invoke(
 		conn.WithoutWrapping(ctx),
 		method,
 		args,
@@ -226,7 +226,7 @@ func (c *connection) NewStream(
 	method string,
 	opts ...grpc.CallOption,
 ) (grpc.ClientStream, error) {
-	return c.router.NewStream(
+	return c.balancer.NewStream(
 		conn.WithoutWrapping(ctx),
 		desc,
 		method,
@@ -249,7 +249,7 @@ func (c *connection) Secure() bool {
 func (c *connection) Table() table.Client {
 	c.tableOnce.Do(func() {
 		c.table = internalTable.New(
-			c.router,
+			c.balancer,
 			tableConfig.New(
 				append(
 					// prepend common params from root config
@@ -268,7 +268,7 @@ func (c *connection) Table() table.Client {
 func (c *connection) Scheme() scheme.Client {
 	c.schemeOnce.Do(func() {
 		c.scheme = internalScheme.New(
-			c.router,
+			c.balancer,
 			schemeConfig.New(
 				append(
 					// prepend common params from root config
@@ -287,7 +287,7 @@ func (c *connection) Scheme() scheme.Client {
 func (c *connection) Coordination() coordination.Client {
 	c.coordinationOnce.Do(func() {
 		c.coordination = internalCoordination.New(
-			c.router,
+			c.balancer,
 			coordinationConfig.New(
 				append(
 					// prepend common params from root config
@@ -306,7 +306,7 @@ func (c *connection) Coordination() coordination.Client {
 func (c *connection) Ratelimiter() ratelimiter.Client {
 	c.ratelimiterOnce.Do(func() {
 		c.ratelimiter = internalRatelimiter.New(
-			c.router,
+			c.balancer,
 			ratelimiterConfig.New(
 				append(
 					// prepend common params from root config
@@ -323,7 +323,7 @@ func (c *connection) Ratelimiter() ratelimiter.Client {
 }
 
 func (c *connection) Discovery() discovery.Client {
-	return c.router.Discovery()
+	return c.balancer.Discovery()
 }
 
 func (c *connection) Scripting() scripting.Client {
@@ -415,6 +415,17 @@ func open(ctx context.Context, opts ...Option) (_ Connection, err error) {
 		return nil, xerrors.WithStackTrace(errors.New("configuration: empty database"))
 	}
 
+	onDone := trace.DriverOnInit(
+		c.config.Trace(),
+		&ctx,
+		c.config.Endpoint(),
+		c.config.Database(),
+		c.config.Secure(),
+	)
+	defer func() {
+		onDone(err)
+	}()
+
 	if c.pool == nil {
 		c.pool = conn.NewPool(
 			ctx,
@@ -422,7 +433,7 @@ func open(ctx context.Context, opts ...Option) (_ Connection, err error) {
 		)
 	}
 
-	c.router, err = router.New(
+	c.balancer, err = balancer.New(
 		ctx,
 		c.config,
 		c.pool,

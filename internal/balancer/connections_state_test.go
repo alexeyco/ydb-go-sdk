@@ -1,4 +1,4 @@
-package router
+package balancer
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	routerconfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/router/config"
+	balancerConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer/config"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/conn"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/mock"
@@ -68,7 +68,7 @@ func TestSortPreferConnections(t *testing.T) {
 		name          string
 		source        []conn.Conn
 		allowFallback bool
-		filter        routerconfig.PreferConnFunc
+		filter        balancerConfig.PreferConnFunc
 		prefer        []conn.Conn
 		fallback      []conn.Conn
 	}{
@@ -103,7 +103,7 @@ func TestSortPreferConnections(t *testing.T) {
 				&mock.Conn{AddrField: "f2"},
 			},
 			allowFallback: false,
-			filter: func(c conn.Conn) bool {
+			filter: func(_ balancerConfig.Info, c conn.Conn) bool {
 				return strings.HasPrefix(c.Endpoint().Address(), "t")
 			},
 			prefer: []conn.Conn{
@@ -121,7 +121,7 @@ func TestSortPreferConnections(t *testing.T) {
 				&mock.Conn{AddrField: "f2"},
 			},
 			allowFallback: true,
-			filter: func(c conn.Conn) bool {
+			filter: func(_ balancerConfig.Info, c conn.Conn) bool {
 				return strings.HasPrefix(c.Endpoint().Address(), "t")
 			},
 			prefer: []conn.Conn{
@@ -137,7 +137,7 @@ func TestSortPreferConnections(t *testing.T) {
 
 	for _, test := range table {
 		t.Run(test.name, func(t *testing.T) {
-			prefer, fallback := sortPreferConnections(test.source, test.filter, test.allowFallback)
+			prefer, fallback := sortPreferConnections(test.source, test.filter, balancerConfig.Info{}, test.allowFallback)
 			require.Equal(t, test.prefer, prefer)
 			require.Equal(t, test.fallback, fallback)
 		})
@@ -145,7 +145,7 @@ func TestSortPreferConnections(t *testing.T) {
 }
 
 func TestSelectRandomConnection(t *testing.T) {
-	s := newConnectionsState(nil, nil, false)
+	s := newConnectionsState(nil, nil, balancerConfig.Info{}, false)
 
 	t.Run("Empty", func(t *testing.T) {
 		c, failedCount := s.selectRandomConnection(nil, false)
@@ -237,7 +237,7 @@ func TestNewState(t *testing.T) {
 	}{
 		{
 			name:  "Empty",
-			state: newConnectionsState(nil, nil, false),
+			state: newConnectionsState(nil, nil, balancerConfig.Info{}, false),
 			res: &connectionsState{
 				connByNodeID: nil,
 				prefer:       nil,
@@ -250,7 +250,7 @@ func TestNewState(t *testing.T) {
 			state: newConnectionsState([]conn.Conn{
 				&mock.Conn{AddrField: "1"},
 				&mock.Conn{AddrField: "2"},
-			}, nil, false),
+			}, nil, balancerConfig.Info{}, false),
 			res: &connectionsState{
 				connByNodeID: nil,
 				prefer: []conn.Conn{
@@ -267,84 +267,84 @@ func TestNewState(t *testing.T) {
 		{
 			name: "FilterDenyFallback",
 			state: newConnectionsState([]conn.Conn{
-				&mock.Conn{AddrField: "t1"},
-				&mock.Conn{AddrField: "f1"},
-				&mock.Conn{AddrField: "t2"},
-				&mock.Conn{AddrField: "f2"},
-			}, func(c conn.Conn) bool {
-				return c.Endpoint().Address()[0] == 't'
-			}, false),
+				&mock.Conn{AddrField: "t1", LocationField: "t"},
+				&mock.Conn{AddrField: "f1", LocationField: "f"},
+				&mock.Conn{AddrField: "t2", LocationField: "t"},
+				&mock.Conn{AddrField: "f2", LocationField: "f"},
+			}, func(info balancerConfig.Info, c conn.Conn) bool {
+				return info.SelfLocation == c.Endpoint().Location()
+			}, balancerConfig.Info{SelfLocation: "t"}, false),
 			res: &connectionsState{
 				connByNodeID: nil,
 				prefer: []conn.Conn{
-					&mock.Conn{AddrField: "t1"},
-					&mock.Conn{AddrField: "t2"},
+					&mock.Conn{AddrField: "t1", LocationField: "t"},
+					&mock.Conn{AddrField: "t2", LocationField: "t"},
 				},
 				fallback: nil,
 				all: []conn.Conn{
-					&mock.Conn{AddrField: "t1"},
-					&mock.Conn{AddrField: "t2"},
+					&mock.Conn{AddrField: "t1", LocationField: "t"},
+					&mock.Conn{AddrField: "t2", LocationField: "t"},
 				},
 			},
 		},
 		{
 			name: "FilterAllowFallback",
 			state: newConnectionsState([]conn.Conn{
-				&mock.Conn{AddrField: "t1"},
-				&mock.Conn{AddrField: "f1"},
-				&mock.Conn{AddrField: "t2"},
-				&mock.Conn{AddrField: "f2"},
-			}, func(c conn.Conn) bool {
-				return c.Endpoint().Address()[0] == 't'
-			}, true),
+				&mock.Conn{AddrField: "t1", LocationField: "t"},
+				&mock.Conn{AddrField: "f1", LocationField: "f"},
+				&mock.Conn{AddrField: "t2", LocationField: "t"},
+				&mock.Conn{AddrField: "f2", LocationField: "f"},
+			}, func(info balancerConfig.Info, c conn.Conn) bool {
+				return info.SelfLocation == c.Endpoint().Location()
+			}, balancerConfig.Info{SelfLocation: "t"}, true),
 			res: &connectionsState{
 				connByNodeID: nil,
 				prefer: []conn.Conn{
-					&mock.Conn{AddrField: "t1"},
-					&mock.Conn{AddrField: "t2"},
+					&mock.Conn{AddrField: "t1", LocationField: "t"},
+					&mock.Conn{AddrField: "t2", LocationField: "t"},
 				},
 				fallback: []conn.Conn{
-					&mock.Conn{AddrField: "f1"},
-					&mock.Conn{AddrField: "f2"},
+					&mock.Conn{AddrField: "f1", LocationField: "f"},
+					&mock.Conn{AddrField: "f2", LocationField: "f"},
 				},
 				all: []conn.Conn{
-					&mock.Conn{AddrField: "t1"},
-					&mock.Conn{AddrField: "f1"},
-					&mock.Conn{AddrField: "t2"},
-					&mock.Conn{AddrField: "f2"},
+					&mock.Conn{AddrField: "t1", LocationField: "t"},
+					&mock.Conn{AddrField: "f1", LocationField: "f"},
+					&mock.Conn{AddrField: "t2", LocationField: "t"},
+					&mock.Conn{AddrField: "f2", LocationField: "f"},
 				},
 			},
 		},
 		{
 			name: "WithNodeID",
 			state: newConnectionsState([]conn.Conn{
-				&mock.Conn{AddrField: "t1", NodeIDField: 1},
-				&mock.Conn{AddrField: "f1", NodeIDField: 2},
-				&mock.Conn{AddrField: "t2", NodeIDField: 3},
-				&mock.Conn{AddrField: "f2", NodeIDField: 4},
-			}, func(c conn.Conn) bool {
-				return c.Endpoint().Address()[0] == 't'
-			}, true),
+				&mock.Conn{AddrField: "t1", NodeIDField: 1, LocationField: "t"},
+				&mock.Conn{AddrField: "f1", NodeIDField: 2, LocationField: "f"},
+				&mock.Conn{AddrField: "t2", NodeIDField: 3, LocationField: "t"},
+				&mock.Conn{AddrField: "f2", NodeIDField: 4, LocationField: "f"},
+			}, func(info balancerConfig.Info, c conn.Conn) bool {
+				return info.SelfLocation == c.Endpoint().Location()
+			}, balancerConfig.Info{SelfLocation: "t"}, true),
 			res: &connectionsState{
 				connByNodeID: map[uint32]conn.Conn{
-					1: &mock.Conn{AddrField: "t1", NodeIDField: 1},
-					2: &mock.Conn{AddrField: "f1", NodeIDField: 2},
-					3: &mock.Conn{AddrField: "t2", NodeIDField: 3},
-					4: &mock.Conn{AddrField: "f2", NodeIDField: 4},
+					1: &mock.Conn{AddrField: "t1", NodeIDField: 1, LocationField: "t"},
+					2: &mock.Conn{AddrField: "f1", NodeIDField: 2, LocationField: "f"},
+					3: &mock.Conn{AddrField: "t2", NodeIDField: 3, LocationField: "t"},
+					4: &mock.Conn{AddrField: "f2", NodeIDField: 4, LocationField: "f"},
 				},
 				prefer: []conn.Conn{
-					&mock.Conn{AddrField: "t1", NodeIDField: 1},
-					&mock.Conn{AddrField: "t2", NodeIDField: 3},
+					&mock.Conn{AddrField: "t1", NodeIDField: 1, LocationField: "t"},
+					&mock.Conn{AddrField: "t2", NodeIDField: 3, LocationField: "t"},
 				},
 				fallback: []conn.Conn{
-					&mock.Conn{AddrField: "f1", NodeIDField: 2},
-					&mock.Conn{AddrField: "f2", NodeIDField: 4},
+					&mock.Conn{AddrField: "f1", NodeIDField: 2, LocationField: "f"},
+					&mock.Conn{AddrField: "f2", NodeIDField: 4, LocationField: "f"},
 				},
 				all: []conn.Conn{
-					&mock.Conn{AddrField: "t1", NodeIDField: 1},
-					&mock.Conn{AddrField: "f1", NodeIDField: 2},
-					&mock.Conn{AddrField: "t2", NodeIDField: 3},
-					&mock.Conn{AddrField: "f2", NodeIDField: 4},
+					&mock.Conn{AddrField: "t1", NodeIDField: 1, LocationField: "t"},
+					&mock.Conn{AddrField: "f1", NodeIDField: 2, LocationField: "f"},
+					&mock.Conn{AddrField: "t2", NodeIDField: 3, LocationField: "t"},
+					&mock.Conn{AddrField: "f2", NodeIDField: 4, LocationField: "f"},
 				},
 			},
 		},
@@ -361,7 +361,7 @@ func TestNewState(t *testing.T) {
 
 func TestConnection(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
-		s := newConnectionsState(nil, nil, false)
+		s := newConnectionsState(nil, nil, balancerConfig.Info{}, false)
 		c, failed := s.GetConnection(context.Background())
 		require.Nil(t, c)
 		require.Equal(t, 0, failed)
@@ -370,7 +370,7 @@ func TestConnection(t *testing.T) {
 		s := newConnectionsState([]conn.Conn{
 			&mock.Conn{AddrField: "1", State: conn.Online},
 			&mock.Conn{AddrField: "2", State: conn.Online},
-		}, nil, false)
+		}, nil, balancerConfig.Info{}, false)
 		c, failed := s.GetConnection(context.Background())
 		require.NotNil(t, c)
 		require.Equal(t, 0, failed)
@@ -379,17 +379,17 @@ func TestConnection(t *testing.T) {
 		s := newConnectionsState([]conn.Conn{
 			&mock.Conn{AddrField: "1", State: conn.Online},
 			&mock.Conn{AddrField: "2", State: conn.Banned},
-		}, nil, false)
+		}, nil, balancerConfig.Info{}, false)
 		c, _ := s.GetConnection(context.Background())
 		require.Equal(t, &mock.Conn{AddrField: "1", State: conn.Online}, c)
 	})
 	t.Run("AllBanned", func(t *testing.T) {
 		s := newConnectionsState([]conn.Conn{
-			&mock.Conn{AddrField: "t1", State: conn.Banned},
-			&mock.Conn{AddrField: "f2", State: conn.Banned},
-		}, func(c conn.Conn) bool {
-			return c.Endpoint().Address()[0] == 't'
-		}, true)
+			&mock.Conn{AddrField: "t1", State: conn.Banned, LocationField: "t"},
+			&mock.Conn{AddrField: "f2", State: conn.Banned, LocationField: "f"},
+		}, func(info balancerConfig.Info, c conn.Conn) bool {
+			return c.Endpoint().Location() == info.SelfLocation
+		}, balancerConfig.Info{}, true)
 		preferred := 0
 		fallback := 0
 		for i := 0; i < 100; i++ {
@@ -408,20 +408,20 @@ func TestConnection(t *testing.T) {
 	})
 	t.Run("PreferBannedWithFallback", func(t *testing.T) {
 		s := newConnectionsState([]conn.Conn{
-			&mock.Conn{AddrField: "t1", State: conn.Banned},
-			&mock.Conn{AddrField: "f2", State: conn.Online},
-		}, func(c conn.Conn) bool {
-			return c.Endpoint().Address()[0] == 't'
-		}, true)
+			&mock.Conn{AddrField: "t1", State: conn.Banned, LocationField: "t"},
+			&mock.Conn{AddrField: "f2", State: conn.Online, LocationField: "f"},
+		}, func(info balancerConfig.Info, c conn.Conn) bool {
+			return c.Endpoint().Location() == info.SelfLocation
+		}, balancerConfig.Info{SelfLocation: "t"}, true)
 		c, failed := s.GetConnection(context.Background())
-		require.Equal(t, &mock.Conn{AddrField: "f2", State: conn.Online}, c)
+		require.Equal(t, &mock.Conn{AddrField: "f2", State: conn.Online, LocationField: "f"}, c)
 		require.Equal(t, 1, failed)
 	})
 	t.Run("PreferNodeID", func(t *testing.T) {
 		s := newConnectionsState([]conn.Conn{
 			&mock.Conn{AddrField: "1", State: conn.Online, NodeIDField: 1},
 			&mock.Conn{AddrField: "2", State: conn.Online, NodeIDField: 2},
-		}, nil, false)
+		}, nil, balancerConfig.Info{}, false)
 		c, failed := s.GetConnection(WithEndpoint(context.Background(), &mock.Endpoint{AddrField: "2", NodeIDField: 2}))
 		require.Equal(t, &mock.Conn{AddrField: "2", State: conn.Online, NodeIDField: 2}, c)
 		require.Equal(t, 0, failed)
@@ -430,7 +430,7 @@ func TestConnection(t *testing.T) {
 		s := newConnectionsState([]conn.Conn{
 			&mock.Conn{AddrField: "1", State: conn.Online, NodeIDField: 1},
 			&mock.Conn{AddrField: "2", State: conn.Unknown, NodeIDField: 2},
-		}, nil, false)
+		}, nil, balancerConfig.Info{}, false)
 		c, failed := s.GetConnection(WithEndpoint(context.Background(), &mock.Endpoint{AddrField: "2", NodeIDField: 2}))
 		require.Equal(t, &mock.Conn{AddrField: "1", State: conn.Online, NodeIDField: 1}, c)
 		require.Equal(t, 0, failed)

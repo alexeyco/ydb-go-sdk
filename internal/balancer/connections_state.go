@@ -1,11 +1,11 @@
-package router
+package balancer
 
 import (
 	"context"
 	"math/rand"
 
+	balancerConfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/balancer/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/conn"
-	routerconfig "github.com/ydb-platform/ydb-go-sdk/v3/internal/router/config"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xrand"
 )
 
@@ -21,7 +21,8 @@ type connectionsState struct {
 
 func newConnectionsState(
 	conns []conn.Conn,
-	preferFunc routerconfig.PreferConnFunc,
+	preferFunc balancerConfig.PreferConnFunc,
+	info balancerConfig.Info,
 	allowFallback bool,
 ) *connectionsState {
 	res := &connectionsState{
@@ -33,7 +34,7 @@ func newConnectionsState(
 		),
 	}
 
-	res.prefer, res.fallback = sortPreferConnections(conns, preferFunc, allowFallback)
+	res.prefer, res.fallback = sortPreferConnections(conns, preferFunc, info, allowFallback)
 	if allowFallback {
 		res.all = conns
 	} else {
@@ -129,7 +130,8 @@ func connsToNodeIDMap(conns []conn.Conn) (res map[uint32]conn.Conn) {
 
 func sortPreferConnections(
 	conns []conn.Conn,
-	preferFunc routerconfig.PreferConnFunc,
+	preferFunc balancerConfig.PreferConnFunc,
+	info balancerConfig.Info,
 	allowFallback bool,
 ) (prefer []conn.Conn, fallback []conn.Conn) {
 	if preferFunc == nil {
@@ -142,7 +144,7 @@ func sortPreferConnections(
 	}
 
 	for _, c := range conns {
-		if preferFunc(c) {
+		if preferFunc(info, c) {
 			prefer = append(prefer, c)
 		} else if allowFallback {
 			fallback = append(fallback, c)

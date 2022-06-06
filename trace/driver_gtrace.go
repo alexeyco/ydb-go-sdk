@@ -569,324 +569,6 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 		}
 	}
 	{
-		h1 := t.OnConnUsagesChange
-		h2 := x.OnConnUsagesChange
-		ret.OnConnUsagesChange = func(d DriverConnUsagesChangeInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			if h1 != nil {
-				h1(d)
-			}
-			if h2 != nil {
-				h2(d)
-			}
-		}
-	}
-	{
-		h1 := t.OnConnStreamUsagesChange
-		h2 := x.OnConnStreamUsagesChange
-		ret.OnConnStreamUsagesChange = func(d DriverConnStreamUsagesChangeInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			if h1 != nil {
-				h1(d)
-			}
-			if h2 != nil {
-				h2(d)
-			}
-		}
-	}
-	{
-		h1 := t.OnConnRelease
-		h2 := x.OnConnRelease
-		ret.OnConnRelease = func(d DriverConnReleaseStartInfo) func(DriverConnReleaseDoneInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			var r, r1 func(DriverConnReleaseDoneInfo)
-			if h1 != nil {
-				r = h1(d)
-			}
-			if h2 != nil {
-				r1 = h2(d)
-			}
-			return func(d DriverConnReleaseDoneInfo) {
-				if options.panicCallback != nil {
-					defer func() {
-						if e := recover(); e != nil {
-							options.panicCallback(e)
-						}
-					}()
-				}
-				if r != nil {
-					r(d)
-				}
-				if r1 != nil {
-					r1(d)
-				}
-			}
-		}
-	}
-	{
-		h1 := t.OnClusterInit
-		h2 := x.OnClusterInit
-		ret.OnClusterInit = func(d DriverClusterInitStartInfo) func(DriverClusterInitDoneInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			var r, r1 func(DriverClusterInitDoneInfo)
-			if h1 != nil {
-				r = h1(d)
-			}
-			if h2 != nil {
-				r1 = h2(d)
-			}
-			return func(d DriverClusterInitDoneInfo) {
-				if options.panicCallback != nil {
-					defer func() {
-						if e := recover(); e != nil {
-							options.panicCallback(e)
-						}
-					}()
-				}
-				if r != nil {
-					r(d)
-				}
-				if r1 != nil {
-					r1(d)
-				}
-			}
-		}
-	}
-	{
-		h1 := t.OnClusterClose
-		h2 := x.OnClusterClose
-		ret.OnClusterClose = func(d DriverClusterCloseStartInfo) func(DriverClusterCloseDoneInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			var r, r1 func(DriverClusterCloseDoneInfo)
-			if h1 != nil {
-				r = h1(d)
-			}
-			if h2 != nil {
-				r1 = h2(d)
-			}
-			return func(d DriverClusterCloseDoneInfo) {
-				if options.panicCallback != nil {
-					defer func() {
-						if e := recover(); e != nil {
-							options.panicCallback(e)
-						}
-					}()
-				}
-				if r != nil {
-					r(d)
-				}
-				if r1 != nil {
-					r1(d)
-				}
-			}
-		}
-	}
-	{
-		h1 := t.OnClusterGet
-		h2 := x.OnClusterGet
-		ret.OnClusterGet = func(d DriverClusterGetStartInfo) func(DriverClusterGetDoneInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			var r, r1 func(DriverClusterGetDoneInfo)
-			if h1 != nil {
-				r = h1(d)
-			}
-			if h2 != nil {
-				r1 = h2(d)
-			}
-			return func(d DriverClusterGetDoneInfo) {
-				if options.panicCallback != nil {
-					defer func() {
-						if e := recover(); e != nil {
-							options.panicCallback(e)
-						}
-					}()
-				}
-				if r != nil {
-					r(d)
-				}
-				if r1 != nil {
-					r1(d)
-				}
-			}
-		}
-	}
-	{
-		h1 := t.OnClusterInsert
-		h2 := x.OnClusterInsert
-		ret.OnClusterInsert = func(d DriverClusterInsertStartInfo) func(DriverClusterInsertDoneInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			var r, r1 func(DriverClusterInsertDoneInfo)
-			if h1 != nil {
-				r = h1(d)
-			}
-			if h2 != nil {
-				r1 = h2(d)
-			}
-			return func(d DriverClusterInsertDoneInfo) {
-				if options.panicCallback != nil {
-					defer func() {
-						if e := recover(); e != nil {
-							options.panicCallback(e)
-						}
-					}()
-				}
-				if r != nil {
-					r(d)
-				}
-				if r1 != nil {
-					r1(d)
-				}
-			}
-		}
-	}
-	{
-		h1 := t.OnClusterRemove
-		h2 := x.OnClusterRemove
-		ret.OnClusterRemove = func(d DriverClusterRemoveStartInfo) func(DriverClusterRemoveDoneInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			var r, r1 func(DriverClusterRemoveDoneInfo)
-			if h1 != nil {
-				r = h1(d)
-			}
-			if h2 != nil {
-				r1 = h2(d)
-			}
-			return func(d DriverClusterRemoveDoneInfo) {
-				if options.panicCallback != nil {
-					defer func() {
-						if e := recover(); e != nil {
-							options.panicCallback(e)
-						}
-					}()
-				}
-				if r != nil {
-					r(d)
-				}
-				if r1 != nil {
-					r1(d)
-				}
-			}
-		}
-	}
-	{
-		h1 := t.OnPessimizeNode
-		h2 := x.OnPessimizeNode
-		ret.OnPessimizeNode = func(d DriverPessimizeNodeStartInfo) func(DriverPessimizeNodeDoneInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			var r, r1 func(DriverPessimizeNodeDoneInfo)
-			if h1 != nil {
-				r = h1(d)
-			}
-			if h2 != nil {
-				r1 = h2(d)
-			}
-			return func(d DriverPessimizeNodeDoneInfo) {
-				if options.panicCallback != nil {
-					defer func() {
-						if e := recover(); e != nil {
-							options.panicCallback(e)
-						}
-					}()
-				}
-				if r != nil {
-					r(d)
-				}
-				if r1 != nil {
-					r1(d)
-				}
-			}
-		}
-	}
-	{
-		h1 := t.OnUnpessimizeNode
-		h2 := x.OnUnpessimizeNode
-		ret.OnUnpessimizeNode = func(d DriverUnpessimizeNodeStartInfo) func(DriverUnpessimizeNodeDoneInfo) {
-			if options.panicCallback != nil {
-				defer func() {
-					if e := recover(); e != nil {
-						options.panicCallback(e)
-					}
-				}()
-			}
-			var r, r1 func(DriverUnpessimizeNodeDoneInfo)
-			if h1 != nil {
-				r = h1(d)
-			}
-			if h2 != nil {
-				r1 = h2(d)
-			}
-			return func(d DriverUnpessimizeNodeDoneInfo) {
-				if options.panicCallback != nil {
-					defer func() {
-						if e := recover(); e != nil {
-							options.panicCallback(e)
-						}
-					}()
-				}
-				if r != nil {
-					r(d)
-				}
-				if r1 != nil {
-					r1(d)
-				}
-			}
-		}
-	}
-	{
 		h1 := t.OnRepeaterWakeUp
 		h2 := x.OnRepeaterWakeUp
 		ret.OnRepeaterWakeUp = func(d DriverRepeaterWakeUpStartInfo) func(DriverRepeaterWakeUpDoneInfo) {
@@ -905,6 +587,146 @@ func (t Driver) Compose(x Driver, opts ...DriverComposeOption) (ret Driver) {
 				r1 = h2(d)
 			}
 			return func(d DriverRepeaterWakeUpDoneInfo) {
+				if options.panicCallback != nil {
+					defer func() {
+						if e := recover(); e != nil {
+							options.panicCallback(e)
+						}
+					}()
+				}
+				if r != nil {
+					r(d)
+				}
+				if r1 != nil {
+					r1(d)
+				}
+			}
+		}
+	}
+	{
+		h1 := t.OnBalancerInit
+		h2 := x.OnBalancerInit
+		ret.OnBalancerInit = func(d DriverBalancerInitStartInfo) func(DriverBalancerInitDoneInfo) {
+			if options.panicCallback != nil {
+				defer func() {
+					if e := recover(); e != nil {
+						options.panicCallback(e)
+					}
+				}()
+			}
+			var r, r1 func(DriverBalancerInitDoneInfo)
+			if h1 != nil {
+				r = h1(d)
+			}
+			if h2 != nil {
+				r1 = h2(d)
+			}
+			return func(d DriverBalancerInitDoneInfo) {
+				if options.panicCallback != nil {
+					defer func() {
+						if e := recover(); e != nil {
+							options.panicCallback(e)
+						}
+					}()
+				}
+				if r != nil {
+					r(d)
+				}
+				if r1 != nil {
+					r1(d)
+				}
+			}
+		}
+	}
+	{
+		h1 := t.OnBalancerClose
+		h2 := x.OnBalancerClose
+		ret.OnBalancerClose = func(d DriverBalancerCloseStartInfo) func(DriverBalancerCloseDoneInfo) {
+			if options.panicCallback != nil {
+				defer func() {
+					if e := recover(); e != nil {
+						options.panicCallback(e)
+					}
+				}()
+			}
+			var r, r1 func(DriverBalancerCloseDoneInfo)
+			if h1 != nil {
+				r = h1(d)
+			}
+			if h2 != nil {
+				r1 = h2(d)
+			}
+			return func(d DriverBalancerCloseDoneInfo) {
+				if options.panicCallback != nil {
+					defer func() {
+						if e := recover(); e != nil {
+							options.panicCallback(e)
+						}
+					}()
+				}
+				if r != nil {
+					r(d)
+				}
+				if r1 != nil {
+					r1(d)
+				}
+			}
+		}
+	}
+	{
+		h1 := t.OnBalancerChooseEndpoint
+		h2 := x.OnBalancerChooseEndpoint
+		ret.OnBalancerChooseEndpoint = func(d DriverBalancerChooseEndpointStartInfo) func(DriverBalancerChooseEndpointDoneInfo) {
+			if options.panicCallback != nil {
+				defer func() {
+					if e := recover(); e != nil {
+						options.panicCallback(e)
+					}
+				}()
+			}
+			var r, r1 func(DriverBalancerChooseEndpointDoneInfo)
+			if h1 != nil {
+				r = h1(d)
+			}
+			if h2 != nil {
+				r1 = h2(d)
+			}
+			return func(d DriverBalancerChooseEndpointDoneInfo) {
+				if options.panicCallback != nil {
+					defer func() {
+						if e := recover(); e != nil {
+							options.panicCallback(e)
+						}
+					}()
+				}
+				if r != nil {
+					r(d)
+				}
+				if r1 != nil {
+					r1(d)
+				}
+			}
+		}
+	}
+	{
+		h1 := t.OnBalancerUpdate
+		h2 := x.OnBalancerUpdate
+		ret.OnBalancerUpdate = func(d DriverBalancerUpdateStartInfo) func(DriverBalancerUpdateDoneInfo) {
+			if options.panicCallback != nil {
+				defer func() {
+					if e := recover(); e != nil {
+						options.panicCallback(e)
+					}
+				}()
+			}
+			var r, r1 func(DriverBalancerUpdateDoneInfo)
+			if h1 != nil {
+				r = h1(d)
+			}
+			if h2 != nil {
+				r1 = h2(d)
+			}
+			return func(d DriverBalancerUpdateDoneInfo) {
 				if options.panicCallback != nil {
 					defer func() {
 						if e := recover(); e != nil {
@@ -1195,140 +1017,6 @@ func (t Driver) onConnClose(d DriverConnCloseStartInfo) func(DriverConnCloseDone
 	}
 	return res
 }
-func (t Driver) onConnUsagesChange(d DriverConnUsagesChangeInfo) {
-	fn := t.OnConnUsagesChange
-	if fn == nil {
-		return
-	}
-	fn(d)
-}
-func (t Driver) onConnStreamUsagesChange(d DriverConnStreamUsagesChangeInfo) {
-	fn := t.OnConnStreamUsagesChange
-	if fn == nil {
-		return
-	}
-	fn(d)
-}
-func (t Driver) onConnRelease(d DriverConnReleaseStartInfo) func(DriverConnReleaseDoneInfo) {
-	fn := t.OnConnRelease
-	if fn == nil {
-		return func(DriverConnReleaseDoneInfo) {
-			return
-		}
-	}
-	res := fn(d)
-	if res == nil {
-		return func(DriverConnReleaseDoneInfo) {
-			return
-		}
-	}
-	return res
-}
-func (t Driver) onClusterInit(d DriverClusterInitStartInfo) func(DriverClusterInitDoneInfo) {
-	fn := t.OnClusterInit
-	if fn == nil {
-		return func(DriverClusterInitDoneInfo) {
-			return
-		}
-	}
-	res := fn(d)
-	if res == nil {
-		return func(DriverClusterInitDoneInfo) {
-			return
-		}
-	}
-	return res
-}
-func (t Driver) onClusterClose(d DriverClusterCloseStartInfo) func(DriverClusterCloseDoneInfo) {
-	fn := t.OnClusterClose
-	if fn == nil {
-		return func(DriverClusterCloseDoneInfo) {
-			return
-		}
-	}
-	res := fn(d)
-	if res == nil {
-		return func(DriverClusterCloseDoneInfo) {
-			return
-		}
-	}
-	return res
-}
-func (t Driver) onClusterGet(d DriverClusterGetStartInfo) func(DriverClusterGetDoneInfo) {
-	fn := t.OnClusterGet
-	if fn == nil {
-		return func(DriverClusterGetDoneInfo) {
-			return
-		}
-	}
-	res := fn(d)
-	if res == nil {
-		return func(DriverClusterGetDoneInfo) {
-			return
-		}
-	}
-	return res
-}
-func (t Driver) onClusterInsert(d DriverClusterInsertStartInfo) func(DriverClusterInsertDoneInfo) {
-	fn := t.OnClusterInsert
-	if fn == nil {
-		return func(DriverClusterInsertDoneInfo) {
-			return
-		}
-	}
-	res := fn(d)
-	if res == nil {
-		return func(DriverClusterInsertDoneInfo) {
-			return
-		}
-	}
-	return res
-}
-func (t Driver) onClusterRemove(d DriverClusterRemoveStartInfo) func(DriverClusterRemoveDoneInfo) {
-	fn := t.OnClusterRemove
-	if fn == nil {
-		return func(DriverClusterRemoveDoneInfo) {
-			return
-		}
-	}
-	res := fn(d)
-	if res == nil {
-		return func(DriverClusterRemoveDoneInfo) {
-			return
-		}
-	}
-	return res
-}
-func (t Driver) onPessimizeNode(d DriverPessimizeNodeStartInfo) func(DriverPessimizeNodeDoneInfo) {
-	fn := t.OnPessimizeNode
-	if fn == nil {
-		return func(DriverPessimizeNodeDoneInfo) {
-			return
-		}
-	}
-	res := fn(d)
-	if res == nil {
-		return func(DriverPessimizeNodeDoneInfo) {
-			return
-		}
-	}
-	return res
-}
-func (t Driver) onUnpessimizeNode(d DriverUnpessimizeNodeStartInfo) func(DriverUnpessimizeNodeDoneInfo) {
-	fn := t.OnUnpessimizeNode
-	if fn == nil {
-		return func(DriverUnpessimizeNodeDoneInfo) {
-			return
-		}
-	}
-	res := fn(d)
-	if res == nil {
-		return func(DriverUnpessimizeNodeDoneInfo) {
-			return
-		}
-	}
-	return res
-}
 func (t Driver) onRepeaterWakeUp(d DriverRepeaterWakeUpStartInfo) func(DriverRepeaterWakeUpDoneInfo) {
 	fn := t.OnRepeaterWakeUp
 	if fn == nil {
@@ -1339,6 +1027,66 @@ func (t Driver) onRepeaterWakeUp(d DriverRepeaterWakeUpStartInfo) func(DriverRep
 	res := fn(d)
 	if res == nil {
 		return func(DriverRepeaterWakeUpDoneInfo) {
+			return
+		}
+	}
+	return res
+}
+func (t Driver) onBalancerInit(d DriverBalancerInitStartInfo) func(DriverBalancerInitDoneInfo) {
+	fn := t.OnBalancerInit
+	if fn == nil {
+		return func(DriverBalancerInitDoneInfo) {
+			return
+		}
+	}
+	res := fn(d)
+	if res == nil {
+		return func(DriverBalancerInitDoneInfo) {
+			return
+		}
+	}
+	return res
+}
+func (t Driver) onBalancerClose(d DriverBalancerCloseStartInfo) func(DriverBalancerCloseDoneInfo) {
+	fn := t.OnBalancerClose
+	if fn == nil {
+		return func(DriverBalancerCloseDoneInfo) {
+			return
+		}
+	}
+	res := fn(d)
+	if res == nil {
+		return func(DriverBalancerCloseDoneInfo) {
+			return
+		}
+	}
+	return res
+}
+func (t Driver) onBalancerChooseEndpoint(d DriverBalancerChooseEndpointStartInfo) func(DriverBalancerChooseEndpointDoneInfo) {
+	fn := t.OnBalancerChooseEndpoint
+	if fn == nil {
+		return func(DriverBalancerChooseEndpointDoneInfo) {
+			return
+		}
+	}
+	res := fn(d)
+	if res == nil {
+		return func(DriverBalancerChooseEndpointDoneInfo) {
+			return
+		}
+	}
+	return res
+}
+func (t Driver) onBalancerUpdate(d DriverBalancerUpdateStartInfo) func(DriverBalancerUpdateDoneInfo) {
+	fn := t.OnBalancerUpdate
+	if fn == nil {
+		return func(DriverBalancerUpdateDoneInfo) {
+			return
+		}
+	}
+	res := fn(d)
+	if res == nil {
+		return func(DriverBalancerUpdateDoneInfo) {
 			return
 		}
 	}
@@ -1540,109 +1288,6 @@ func DriverOnConnClose(t Driver, c *context.Context, endpoint EndpointInfo) func
 		res(p)
 	}
 }
-func DriverOnConnUsagesChange(t Driver, endpoint EndpointInfo, usages int) {
-	var p DriverConnUsagesChangeInfo
-	p.Endpoint = endpoint
-	p.Usages = usages
-	t.onConnUsagesChange(p)
-}
-func DriverOnConnStreamUsagesChange(t Driver, endpoint EndpointInfo, usages int) {
-	var p DriverConnStreamUsagesChangeInfo
-	p.Endpoint = endpoint
-	p.Usages = usages
-	t.onConnStreamUsagesChange(p)
-}
-func DriverOnConnRelease(t Driver, c *context.Context, endpoint EndpointInfo) func(error) {
-	var p DriverConnReleaseStartInfo
-	p.Context = c
-	p.Endpoint = endpoint
-	res := t.onConnRelease(p)
-	return func(e error) {
-		var p DriverConnReleaseDoneInfo
-		p.Error = e
-		res(p)
-	}
-}
-func DriverOnClusterInit(t Driver, c *context.Context) func(error) {
-	var p DriverClusterInitStartInfo
-	p.Context = c
-	res := t.onClusterInit(p)
-	return func(e error) {
-		var p DriverClusterInitDoneInfo
-		p.Error = e
-		res(p)
-	}
-}
-func DriverOnClusterClose(t Driver, c *context.Context) func(error) {
-	var p DriverClusterCloseStartInfo
-	p.Context = c
-	res := t.onClusterClose(p)
-	return func(e error) {
-		var p DriverClusterCloseDoneInfo
-		p.Error = e
-		res(p)
-	}
-}
-func DriverOnClusterGet(t Driver, c *context.Context) func(endpoint EndpointInfo, _ error) {
-	var p DriverClusterGetStartInfo
-	p.Context = c
-	res := t.onClusterGet(p)
-	return func(endpoint EndpointInfo, e error) {
-		var p DriverClusterGetDoneInfo
-		p.Endpoint = endpoint
-		p.Error = e
-		res(p)
-	}
-}
-func DriverOnClusterInsert(t Driver, c *context.Context, endpoint EndpointInfo) func(inserted bool, state ConnState) {
-	var p DriverClusterInsertStartInfo
-	p.Context = c
-	p.Endpoint = endpoint
-	res := t.onClusterInsert(p)
-	return func(inserted bool, state ConnState) {
-		var p DriverClusterInsertDoneInfo
-		p.Inserted = inserted
-		p.State = state
-		res(p)
-	}
-}
-func DriverOnClusterRemove(t Driver, c *context.Context, endpoint EndpointInfo) func(removed bool, state ConnState) {
-	var p DriverClusterRemoveStartInfo
-	p.Context = c
-	p.Endpoint = endpoint
-	res := t.onClusterRemove(p)
-	return func(removed bool, state ConnState) {
-		var p DriverClusterRemoveDoneInfo
-		p.Removed = removed
-		p.State = state
-		res(p)
-	}
-}
-func DriverOnPessimizeNode(t Driver, c *context.Context, endpoint EndpointInfo, state ConnState, cause error) func(state ConnState) {
-	var p DriverPessimizeNodeStartInfo
-	p.Context = c
-	p.Endpoint = endpoint
-	p.State = state
-	p.Cause = cause
-	res := t.onPessimizeNode(p)
-	return func(state ConnState) {
-		var p DriverPessimizeNodeDoneInfo
-		p.State = state
-		res(p)
-	}
-}
-func DriverOnUnpessimizeNode(t Driver, c *context.Context, endpoint EndpointInfo, state ConnState) func(state ConnState) {
-	var p DriverUnpessimizeNodeStartInfo
-	p.Context = c
-	p.Endpoint = endpoint
-	p.State = state
-	res := t.onUnpessimizeNode(p)
-	return func(state ConnState) {
-		var p DriverUnpessimizeNodeDoneInfo
-		p.State = state
-		res(p)
-	}
-}
 func DriverOnRepeaterWakeUp(t Driver, c *context.Context, name string, event string) func(error) {
 	var p DriverRepeaterWakeUpStartInfo
 	p.Context = c
@@ -1651,6 +1296,50 @@ func DriverOnRepeaterWakeUp(t Driver, c *context.Context, name string, event str
 	res := t.onRepeaterWakeUp(p)
 	return func(e error) {
 		var p DriverRepeaterWakeUpDoneInfo
+		p.Error = e
+		res(p)
+	}
+}
+func DriverOnBalancerInit(t Driver, c *context.Context) func(error) {
+	var p DriverBalancerInitStartInfo
+	p.Context = c
+	res := t.onBalancerInit(p)
+	return func(e error) {
+		var p DriverBalancerInitDoneInfo
+		p.Error = e
+		res(p)
+	}
+}
+func DriverOnBalancerClose(t Driver, c *context.Context) func(error) {
+	var p DriverBalancerCloseStartInfo
+	p.Context = c
+	res := t.onBalancerClose(p)
+	return func(e error) {
+		var p DriverBalancerCloseDoneInfo
+		p.Error = e
+		res(p)
+	}
+}
+func DriverOnBalancerChooseEndpoint(t Driver, c *context.Context) func(endpoint EndpointInfo, _ error) {
+	var p DriverBalancerChooseEndpointStartInfo
+	p.Context = c
+	res := t.onBalancerChooseEndpoint(p)
+	return func(endpoint EndpointInfo, e error) {
+		var p DriverBalancerChooseEndpointDoneInfo
+		p.Endpoint = endpoint
+		p.Error = e
+		res(p)
+	}
+}
+func DriverOnBalancerUpdate(t Driver, c *context.Context, needLocalDC bool) func(endpoints []EndpointInfo, localDC string, _ error) {
+	var p DriverBalancerUpdateStartInfo
+	p.Context = c
+	p.NeedLocalDC = needLocalDC
+	res := t.onBalancerUpdate(p)
+	return func(endpoints []EndpointInfo, localDC string, e error) {
+		var p DriverBalancerUpdateDoneInfo
+		p.Endpoints = endpoints
+		p.LocalDC = localDC
 		p.Error = e
 		res(p)
 	}
