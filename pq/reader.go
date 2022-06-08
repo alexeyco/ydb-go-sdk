@@ -53,9 +53,26 @@ func (r *Reader) CommitBatch(ctx context.Context, batch CommitBatch) error {
 	panic("not implemented")
 }
 
+func (r *Reader) PartitionControler() *PartitionController {
+	panic("not implemented")
+}
+
 type PartitionController struct{}
 
-func (pc *PartitionController) OnSessionStart(callback func(info *pqstreamreader.StartPartitionSessionRequest, response *pqstreamreader.StartPartitionSessionResponse) error) {
+// TODO: объявить более специализированные типы
+
+type StartPartitionSessionRequest struct {
+	Session         *PartitionSession
+	CommittedOffset int64
+	EndOffset       int64
+}
+
+type StartPartitionSessionResponse = pqstreamreader.StartPartitionSessionResponse
+type StopPartitionSessionRequest = pqstreamreader.StopPartitionSessionRequest
+type StopPartitionSessionResponse = pqstreamreader.StopPartitionSessionResponse
+type PartitionSessionStatusResponse = pqstreamreader.PartitionSessionStatusResponse
+
+func (pc *PartitionController) OnSessionStart(callback func(info *StartPartitionSessionRequest, response *StartPartitionSessionResponse) error) {
 	/*
 		callback будет вызываться при каждом старте партиций
 		info - информация о новой партиции
@@ -63,7 +80,7 @@ func (pc *PartitionController) OnSessionStart(callback func(info *pqstreamreader
 	*/
 }
 
-func (pc *PartitionController) OnSessionShutdown(callback func(info *pqstreamreader.StopPartitionSessionRequest, response *pqstreamreader.StopPartitionSessionResponse) error) {
+func (pc *PartitionController) OnSessionShutdown(callback func(info *StopPartitionSessionRequest, response *StopPartitionSessionResponse) error) {
 	/*
 		callback будет вызываться при каждом стопе
 		info - информация о новой партиции
@@ -71,6 +88,6 @@ func (pc *PartitionController) OnSessionShutdown(callback func(info *pqstreamrea
 	*/
 }
 
-func (pc *PartitionController) OnPartitionStatus(callback func(info *pqstreamreader.PartitionSessionStatusResponse)) {
+func (pc *PartitionController) OnPartitionStatus(callback func(info *PartitionSessionStatusResponse)) {
 
 }

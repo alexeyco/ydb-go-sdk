@@ -160,7 +160,7 @@ type PartitionOffset struct {
 
 type ReadSelector struct {
 	Stream             scheme.Path
-	Partitions         []int
+	Partitions         []int64
 	SkipMessagesBefore time.Time
 }
 
