@@ -34,3 +34,43 @@ func (r *Reader) stream() ReaderStream {
 
 	return r.streamVal
 }
+
+func (r *Reader) ReadMessageBatch(context.Context, ...ReadBatchOption) (Batch, error) {
+	return Batch{}, nil
+}
+
+func (r *Reader) ReadMessage(context.Context) (Message, error) {
+	return Message{}, nil
+}
+
+func (r *Reader) Commit(ctx context.Context, commits ...CommitableByOffset) error {
+	batch := make(CommitBatch, 0, len(commits))
+	batch.Append(commits...)
+	return r.CommitBatch(ctx, batch)
+}
+
+func (r *Reader) CommitBatch(ctx context.Context, batch CommitBatch) error {
+	panic("not implemented")
+}
+
+type PartitionController struct{}
+
+func (pc *PartitionController) OnSessionStart(callback func(info *pqstreamreader.StartPartitionSessionRequest, response *pqstreamreader.StartPartitionSessionResponse) error) {
+	/*
+		callback будет вызываться при каждом старте партиций
+		info - информация о новой партиции
+		response - предполагаемый ответ серверу, предзаполненный SDK, который можно менять.
+	*/
+}
+
+func (pc *PartitionController) OnSessionShutdown(callback func(info *pqstreamreader.StopPartitionSessionRequest, response *pqstreamreader.StopPartitionSessionResponse) error) {
+	/*
+		callback будет вызываться при каждом стопе
+		info - информация о новой партиции
+		response - предполагаемый ответ серверу, предзаполненный SDK, который можно менять.
+	*/
+}
+
+func (pc *PartitionController) OnPartitionStatus(callback func(info *pqstreamreader.PartitionSessionStatusResponse)) {
+
+}

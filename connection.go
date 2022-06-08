@@ -347,7 +347,7 @@ func (c *connection) Scripting() scripting.Client {
 
 func (c *connection) Persqueue() pq.Client {
 	c.persqueueOnce.Do(func() {
-		c.persqueue = intpq.New(c.router, c.persqueueOptions)
+		c.persqueue = intpq.New(c.balancer, c.persqueueOptions)
 	})
 	panic("not implemented")
 	//return c.persqueue

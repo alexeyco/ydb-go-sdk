@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
-	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ictx"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ipq/pqstreamreader"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
 )
@@ -33,9 +33,54 @@ type MessageData struct { // Данные для записи. Так же эм�
 	Data io.Reader
 }
 
+type PartitionSession struct {
+	ID          pqstreamreader.PartitionSessionID
+	PartitionID int64
+
+	ctx context.Context
+
+	m              sync.Mutex
+	gracefulled    bool
+	gracefulSignal chan struct{}
+	commitedOffset pqstreamreader.Offset
+}
+
+func (s *PartitionSession) graceful(offset pqstreamreader.Offset) error {
+	s.m.Lock()
+	defer s.m.Unlock()
+
+	if s.gracefulled {
+		return xerrors.WithStackTrace(errors.New("partition send graceful signal already"))
+	}
+
+	s.gracefulled = true
+	s.commitedOffset = offset
+	close(s.gracefulSignal)
+	return nil
+}
+
+func (s *PartitionSession) CommitedOffset() pqstreamreader.Offset {
+	s.m.Lock()
+	defer s.m.Unlock()
+
+	return s.commitedOffset
+}
+
+func (s *PartitionSession) GracefulNotifier() <-chan struct{} {
+	return s.gracefulSignal
+}
+
+func (s *PartitionSession) Context() context.Context {
+	return context.TODO()
+}
+
+func (s *PartitionSession) GracefulContext() context.Context {
+	return context.TODO()
+}
+
 type Message struct {
-	Stream    string
-	Partition int64
+	Stream           string
+	PartitionSession *PartitionSession
 
 	MessageData
 	CommitOffset
@@ -68,7 +113,8 @@ func (m Message) Context() context.Context {
 }
 
 type Batch struct {
-	Messages []Message
+	Messages       []Message
+	WriteTimestamp time.Time
 
 	CommitOffset // от всех сообщений батча
 
@@ -77,14 +123,15 @@ type Batch struct {
 	partitionGracefulShutdownChannel <-chan struct{}
 }
 
-func NewBatchFromStream(batchContext context.Context, stream string, partitionNum int64, sessionID pqstreamreader.PartitionSessionID, sb pqstreamreader.Batch) *Batch {
+func NewBatchFromStream(batchContext context.Context, stream string, session *PartitionSession, sb pqstreamreader.Batch) *Batch {
 	var res Batch
 	res.sizeBytes = sb.SizeBytes
+	res.WriteTimestamp = sb.WriteTimeStamp
 	res.Messages = make([]Message, len(sb.Messages))
 
 	if len(sb.Messages) > 0 {
 		commitOffset := &res.CommitOffset
-		commitOffset.partitionSessionID = sessionID
+		commitOffset.partitionSessionID = session.ID
 		commitOffset.Offset = sb.Messages[0].Offset
 		commitOffset.ToOffset = sb.Messages[len(sb.Messages)-1].Offset + 1
 	}
@@ -95,7 +142,7 @@ func NewBatchFromStream(batchContext context.Context, stream string, partitionNu
 		cMess := &res.Messages[i]
 		cMess.Stream = stream
 		cMess.IP = sb.WriterIP
-		cMess.Partition = partitionNum
+		cMess.PartitionSession = session
 		cMess.ctx = batchContext
 
 		messData := &cMess.MessageData
@@ -108,9 +155,8 @@ func NewBatchFromStream(batchContext context.Context, stream string, partitionNu
 	return &res
 }
 
-func (m Batch) WithBatchDealine(ctx context.Context) (context.Context, context.CancelFunc) {
-	ctx, cancelFunc := ictx.Merge(ctx, m.partitionContext)
-	return ctx, func() { cancelFunc(ErrContextExplicitCancelled) }
+func (m Batch) Context() context.Context {
+	return m.partitionContext
 }
 
 // PartitionSessionGracefulShutdown return channel, that will close, whe SDK receive signal about graceful shutdown partition

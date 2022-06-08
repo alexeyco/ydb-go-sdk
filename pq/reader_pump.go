@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ydb-platform/ydb-go-sdk/v3/credentials"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ictx"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ipq/pqstreamreader"
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/xerrors"
@@ -22,30 +23,34 @@ type readerPump struct {
 	ctx    context.Context
 	cancel ictx.CancelErrFunc
 
-	freeBytes chan int
-	stream    ReaderStream
+	freeBytes         chan int
+	stream            ReaderStream
+	sessionController pumpSessionController
 
 	readResponsesParseSignal chan struct{}
 	messageBatches           chan *Batch
+	cred                     credentials.Credentials
+	credUpdateInterval       time.Duration
 
 	m             sync.RWMutex
 	err           error
 	started       bool
 	readResponses []*pqstreamreader.ReadResponse // use slice instead channel for guarantee read grpc stream without block
-	sessions      map[partitionSessionID]*partitionSessionData
 }
 
-func newReaderPump(stopPump context.Context, bufferSize int, stream ReaderStream) *readerPump {
+func newReaderPump(stopPump context.Context, bufferSize int, stream ReaderStream, cred credentials.Credentials, credUpdateInterval time.Duration) *readerPump {
 	stopPump, cancel := ictx.WithErrCancel(stopPump)
 	res := &readerPump{
 		ctx:                      stopPump,
 		freeBytes:                make(chan int, 1),
 		stream:                   stream,
 		cancel:                   cancel,
+		cred:                     cred,
+		credUpdateInterval:       credUpdateInterval,
 		readResponsesParseSignal: make(chan struct{}, 1),
 		messageBatches:           make(chan *Batch),
-		sessions:                 map[pqstreamreader.PartitionSessionID]*partitionSessionData{},
 	}
+	res.sessionController.init(res.ctx, res)
 	res.freeBytes <- bufferSize
 	return res
 }
@@ -76,6 +81,14 @@ func (r *readerPump) Commit(ctx context.Context, offset CommitBatch) error {
 	return r.stream.Send(req)
 }
 
+func (r *readerPump) send(mess pqstreamreader.ClientMessage) error {
+	err := r.stream.Send(mess)
+	if err != nil {
+		r.close(err)
+	}
+	return err
+}
+
 func (r *readerPump) Start() error {
 	if err := r.setStarted(); err != nil {
 		return err
@@ -88,6 +101,7 @@ func (r *readerPump) Start() error {
 	go r.readMessagesLoop()
 	go r.dataRequestLoop()
 	go r.dataParseLoop()
+	go r.updateTokenLoop()
 	return nil
 }
 
@@ -159,12 +173,12 @@ func (r *readerPump) readMessagesLoop() {
 		case *pqstreamreader.ReadResponse:
 			r.onReadResponse(m)
 		case *pqstreamreader.StartPartitionSessionRequest:
-			if err = r.onStartPartitionSessionRequest(m); err != nil {
+			if err = r.sessionController.onStartPartitionSessionRequest(m); err != nil {
 				r.close(err)
 				return
 			}
 		case *pqstreamreader.StopPartitionSessionRequest:
-			if err = r.onStopPartitionSessionRequest(m); err != nil {
+			if err = r.sessionController.onStopPartitionSessionRequest(m); err != nil {
 				r.close(err)
 				return
 			}
@@ -173,7 +187,17 @@ func (r *readerPump) readMessagesLoop() {
 				r.close(err)
 				return
 			}
+
+		case *pqstreamreader.PartitionSessionStatusResponse:
+			if err = r.sessionController.onPartitionStatusResponse(m); err != nil {
+				r.close(err)
+			}
+			return
+
+		case *pqstreamreader.UpdateTokenResponse:
+			// skip
 		default:
+			// TODO: remove before release
 			r.close(xerrors.WithStackTrace(fmt.Errorf("receive unexpected message: %#v (%v)", m, reflect.TypeOf(m))))
 		}
 	}
@@ -225,6 +249,26 @@ func (r *readerPump) dataParseLoop() {
 	}
 }
 
+func (r *readerPump) updateTokenLoop() {
+	ticker := time.NewTicker(r.credUpdateInterval)
+	defer ticker.Stop()
+
+	readerCancel := r.ctx.Done()
+	for {
+		select {
+		case <-readerCancel:
+			return
+		case <-ticker.C:
+			tokenCtx, cancel := context.WithCancel(r.ctx)
+			err := r.updateToken(tokenCtx)
+			cancel()
+			if err != nil {
+				// TODO: log
+			}
+		}
+	}
+}
+
 func (r *readerPump) getFirstReadResponse() (res *pqstreamreader.ReadResponse) {
 	r.m.Lock()
 	defer r.m.Unlock()
@@ -248,9 +292,13 @@ func (r *readerPump) dataParse(mess *pqstreamreader.ReadResponse) {
 	doneChannel := r.ctx.Done()
 	for pIndex := range mess.Partitions {
 		p := &mess.Partitions[pIndex]
+		session := &PartitionSession{
+			PartitionID: -1,
+			ID:          p.PartitionSessionID,
+		}
 		for bIndex := range p.Batches {
 			select {
-			case r.messageBatches <- NewBatchFromStream(context.TODO(), "topic-todo", -1, p.PartitionSessionID, p.Batches[bIndex]):
+			case r.messageBatches <- NewBatchFromStream(context.TODO(), "topic-todo", session, p.Batches[bIndex]):
 				// pass
 			case <-doneChannel:
 				return
@@ -274,7 +322,7 @@ func (r *readerPump) close(err error) {
 func (r *readerPump) onCommitResponse(mess *pqstreamreader.CommitOffsetResponse) error {
 	for i := range mess.Committed {
 		commit := &mess.Committed[i]
-		err := r.sessionModify(commit.PartitionSessionID, func(p *partitionSessionData) {
+		err := r.sessionController.sessionModify(commit.PartitionSessionID, func(p *partitionSessionData) {
 			p.commitOffsetNotify(commit.Committed, nil)
 		})
 		if err != nil {
@@ -297,71 +345,18 @@ func (r *readerPump) onReadResponse(mess *pqstreamreader.ReadResponse) {
 	}
 }
 
-func (r *readerPump) onStartPartitionSessionRequest(mess *pqstreamreader.StartPartitionSessionRequest) error {
-	// TODO: improve handler
-	// TODO: add user handler
-
-	data := newPartitionSessionData(r.ctx, mess)
-
-	if err := r.sessionAdd(mess.PartitionSession.PartitionSessionID, data); err != nil {
-		return err
-	}
-
-	err := r.stream.Send(&pqstreamreader.StartPartitionSessionResponse{PartitionSessionID: mess.PartitionSession.PartitionSessionID})
+func (r *readerPump) updateToken(ctx context.Context) error {
+	token, err := r.cred.Token(ctx)
 	if err != nil {
-		r.close(err)
+		// TODO: log
+		return xerrors.WithStackTrace(err)
 	}
-	return nil
-}
 
-func (r *readerPump) onStopPartitionSessionRequest(mess *pqstreamreader.StopPartitionSessionRequest) error {
-	if mess.Graceful {
-		err := r.sessionModify(mess.PartitionSessionID, func(p *partitionSessionData) {
-			p.nofityGraceful()
-		})
+	err = r.send(&pqstreamreader.UpdateTokenRequest{Token: token})
+	if err != nil {
 		return err
 	}
-
-	if data, err := r.sessionDel(mess.PartitionSessionID); err == nil {
-		data.close(errPartitionStopped)
-	} else {
-		return err
-	}
-
 	return nil
-}
-
-func (r *readerPump) sessionAdd(id partitionSessionID, data *partitionSessionData) error {
-	r.m.Lock()
-	defer r.m.Unlock()
-
-	if _, ok := r.sessions[id]; ok {
-		return xerrors.WithStackTrace(fmt.Errorf("session id already existed: %v", id))
-	}
-	r.sessions[id] = data
-	return nil
-}
-
-func (r *readerPump) sessionDel(id partitionSessionID) (*partitionSessionData, error) {
-	r.m.Lock()
-	defer r.m.Unlock()
-
-	if data, ok := r.sessions[id]; ok {
-		delete(r.sessions, id)
-		return data, nil
-	}
-	return nil, xerrors.WithStackTrace(fmt.Errorf("delete undefined partition session: %v", id))
-}
-func (r *readerPump) sessionModify(id partitionSessionID, callback func(p *partitionSessionData)) error {
-	r.m.Lock()
-	defer r.m.Unlock()
-
-	if p, ok := r.sessions[id]; ok {
-		callback(p)
-		return nil
-	}
-
-	return xerrors.WithStackTrace(fmt.Errorf("modify unexpectet session id: %v", id))
 }
 
 type partitionSessionData struct {
@@ -401,6 +396,7 @@ func (p *partitionSessionData) commitOffsetNotify(offset pqstreamreader.Offset, 
 func (p *partitionSessionData) nofityGraceful() {
 	p.gracefulCancel(errGracefulShutdownPartition)
 }
+
 func (p *partitionSessionData) close(err error) {
 	p.aliveCancel(err)
 	for _, waiter := range p.commitWaiters {
@@ -408,11 +404,106 @@ func (p *partitionSessionData) close(err error) {
 	}
 }
 
+func (p *partitionSessionData) onStatusResponse(m *pqstreamreader.PartitionSessionStatusResponse) {
+	// TODO: response to status waiters?
+}
+
 type commitWaiter struct {
 	offset pqstreamreader.Offset
 	notify func(error)
 }
 
-func TestCreatePump(ctx context.Context, stream ReaderStream) *readerPump {
-	return newReaderPump(ctx, 1024*1024*1024, stream)
+type pumpSessionController struct {
+	ctx context.Context
+	r   *readerPump
+
+	m        sync.RWMutex
+	sessions map[partitionSessionID]*partitionSessionData
+}
+
+func (c *pumpSessionController) init(ctx context.Context, reader *readerPump) {
+	c.ctx = ctx
+	c.r = reader
+	c.sessions = make(map[partitionSessionID]*partitionSessionData)
+}
+
+func (c *pumpSessionController) requestStatus(id partitionSessionID) error {
+	if _, ok := c.sessions[id]; !ok {
+		return xerrors.WithStackTrace(fmt.Errorf("unexpected session id: %v", id))
+	}
+
+	return c.r.send(&pqstreamreader.PartitionSessionStatusRequest{PartitionSessionID: id})
+}
+
+func (c *pumpSessionController) onStartPartitionSessionRequest(mess *pqstreamreader.StartPartitionSessionRequest) error {
+	// TODO: improve handler
+	// TODO: add user handler
+
+	data := newPartitionSessionData(c.ctx, mess)
+
+	if err := c.sessionAdd(mess.PartitionSession.PartitionSessionID, data); err != nil {
+		return err
+	}
+
+	return c.r.send(&pqstreamreader.StartPartitionSessionResponse{PartitionSessionID: mess.PartitionSession.PartitionSessionID})
+}
+
+func (c *pumpSessionController) onStopPartitionSessionRequest(mess *pqstreamreader.StopPartitionSessionRequest) error {
+	if mess.Graceful {
+		err := c.sessionModify(mess.PartitionSessionID, func(p *partitionSessionData) {
+			p.nofityGraceful()
+		})
+		return err
+	}
+
+	if data, err := c.sessionDel(mess.PartitionSessionID); err == nil {
+		data.close(errPartitionStopped)
+	} else {
+		return err
+	}
+
+	return nil
+}
+
+func (c *pumpSessionController) sessionAdd(id partitionSessionID, data *partitionSessionData) error {
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	if _, ok := c.sessions[id]; ok {
+		return xerrors.WithStackTrace(fmt.Errorf("session id already existed: %v", id))
+	}
+	c.sessions[id] = data
+	return nil
+}
+
+func (c *pumpSessionController) sessionDel(id partitionSessionID) (*partitionSessionData, error) {
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	if data, ok := c.sessions[id]; ok {
+		delete(c.sessions, id)
+		return data, nil
+	}
+	return nil, xerrors.WithStackTrace(fmt.Errorf("delete undefined partition session: %v", id))
+}
+func (c *pumpSessionController) sessionModify(id partitionSessionID, callback func(p *partitionSessionData)) error {
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	if p, ok := c.sessions[id]; ok {
+		callback(p)
+		return nil
+	}
+
+	return xerrors.WithStackTrace(fmt.Errorf("modify unexpectet session id: %v", id))
+}
+
+func (c *pumpSessionController) onPartitionStatusResponse(m *pqstreamreader.PartitionSessionStatusResponse) error {
+	return c.sessionModify(m.PartitionSessionID, func(p *partitionSessionData) {
+		p.onStatusResponse(m)
+	})
+}
+
+func TestCreatePump(ctx context.Context, stream ReaderStream, cred credentials.Credentials, interval time.Duration) *readerPump {
+	return newReaderPump(ctx, 1024*1024*1024, stream, cred, interval)
 }

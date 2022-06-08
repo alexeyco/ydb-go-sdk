@@ -1,6 +1,7 @@
 package pqstreamreader
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -105,7 +106,14 @@ func (s StreamReader) Recv() (ServerMessage, error) {
 	case *Ydb_PersQueue_V1.StreamingReadServerMessage_ReadResponse_:
 		resp := &ReadResponse{}
 		resp.ServerMessageMetadata = meta
-		if err := resp.fromProto(m.ReadResponse); err != nil {
+		if err = resp.fromProto(m.ReadResponse); err != nil {
+			return nil, err
+		}
+		return resp, nil
+	case *Ydb_PersQueue_V1.StreamingReadServerMessage_CommitResponse_:
+		resp := &CommitOffsetResponse{}
+		resp.ServerMessageMetadata = meta
+		if err = resp.fromProto(m.CommitResponse); err != nil {
 			return nil, err
 		}
 		return resp, nil
@@ -131,7 +139,11 @@ func (s StreamReader) Send(mess ClientMessage) error {
 			ClientMessage: &Ydb_PersQueue_V1.StreamingReadClientMessage_StartPartitionSessionResponse_{StartPartitionSessionResponse: m.toProto()},
 		}
 		return s.Stream.Send(grpcMess)
-
+	case *CommitOffsetRequest:
+		grpcMess := &Ydb_PersQueue_V1.StreamingReadClientMessage{
+			ClientMessage: &Ydb_PersQueue_V1.StreamingReadClientMessage_CommitRequest_{CommitRequest: m.toProto()},
+		}
+		return s.Stream.Send(grpcMess)
 	default:
 		// TODO: return error
 	}
@@ -449,6 +461,30 @@ type CommitOffsetRequest struct {
 
 	PartitionsOffsets []PartitionCommitOffset
 }
+
+func (r *CommitOffsetRequest) toProto() *Ydb_PersQueue_V1.StreamingReadClientMessage_CommitRequest {
+	res := &Ydb_PersQueue_V1.StreamingReadClientMessage_CommitRequest{}
+	res.Commits = make([]*Ydb_PersQueue_V1.StreamingReadClientMessage_PartitionCommit, len(r.PartitionsOffsets))
+
+	for partitionIndex := range r.PartitionsOffsets {
+		partition := &r.PartitionsOffsets[partitionIndex]
+
+		grpcPartition := &Ydb_PersQueue_V1.StreamingReadClientMessage_PartitionCommit{}
+		res.Commits[partitionIndex] = grpcPartition
+		grpcPartition.PartitionSessionId = partition.PartitionSessionID.ToInt64()
+		grpcPartition.Offsets = make([]*Ydb_PersQueue_V1.OffsetsRange, len(partition.Offsets))
+
+		for offsetIndex := range partition.Offsets {
+			offset := partition.Offsets[offsetIndex]
+			grpcPartition.Offsets[offsetIndex] = &Ydb_PersQueue_V1.OffsetsRange{
+				StartOffset: offset.Start.ToInt64(),
+				EndOffset:   offset.End.ToInt64(),
+			}
+		}
+	}
+	return res
+}
+
 type PartitionCommitOffset struct {
 	PartitionSessionID PartitionSessionID
 	Offsets            []OffsetRange
@@ -466,6 +502,23 @@ type CommitOffsetResponse struct {
 	ServerMessageMetadata
 	Committed []PartitionCommittedOffset
 }
+
+func (r *CommitOffsetResponse) fromProto(response *Ydb_PersQueue_V1.StreamingReadServerMessage_CommitResponse) error {
+	r.Committed = make([]PartitionCommittedOffset, len(response.PartitionsCommittedOffsets))
+	for i := range r.Committed {
+		grpcCommited := response.PartitionsCommittedOffsets[i]
+		if grpcCommited == nil {
+			return xerrors.WithStackTrace(errors.New("unexpected nil while parse commit offset response"))
+		}
+
+		commited := &r.Committed[i]
+		commited.PartitionSessionID.FromInt64(grpcCommited.PartitionSessionId)
+		commited.Committed.FromInt64(grpcCommited.CommittedOffset)
+	}
+
+	return nil
+}
+
 type PartitionCommittedOffset struct {
 	PartitionSessionID PartitionSessionID
 	Committed          Offset

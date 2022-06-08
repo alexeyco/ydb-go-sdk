@@ -10,6 +10,8 @@ import (
 	Ydb_PersQueue_V12 "github.com/ydb-platform/ydb-go-genproto/Ydb_PersQueue_V1"
 	"google.golang.org/grpc"
 
+	"github.com/ydb-platform/ydb-go-sdk/v3/credentials"
+
 	"github.com/ydb-platform/ydb-go-sdk/v3/internal/ipq/pqstreamreader"
 
 	"github.com/ydb-platform/ydb-go-sdk/v3/pq"
@@ -28,7 +30,7 @@ func TestInit(t *testing.T) {
 	grpcStream, err := pqClient.StreamingRead(ctx)
 	require.NoError(t, err)
 
-	pump := pq.TestCreatePump(ctx, pqstreamreader.StreamReader{Stream: grpcStream})
+	pump := pq.TestCreatePump(ctx, pqstreamreader.StreamReader{Stream: grpcStream}, credentials.NewAnonymousCredentials(), time.Hour)
 	require.NoError(t, pump.Start())
 	batch, err := pump.ReadMessageBatch(ctx)
 	require.NoError(t, err)
@@ -37,5 +39,6 @@ func TestInit(t *testing.T) {
 		require.NoError(t, err)
 		t.Log(string(data))
 	}
+	require.NoError(t, pump.Commit(ctx, pq.CommitBatch{batch.GetCommitOffset()}))
 	time.Sleep(time.Second)
 }

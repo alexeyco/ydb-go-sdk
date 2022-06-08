@@ -21,7 +21,7 @@ type Client interface {
 	RemoveReadRule(context.Context, scheme.Path, Consumer) error
 
 	Writer(ctx context.Context, opts ...writerOption) Writer
-	Reader(ctx context.Context, opts ...readerOption) ReaderExample
+	Reader(ctx context.Context, opts ...readerOption) *Reader
 }
 
 type Consumer string
