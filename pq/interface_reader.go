@@ -24,6 +24,10 @@ type ReaderConfig struct {
 
 type readerOption func()
 
+func WithBaseContext(ctx context.Context) readerOption {
+	panic("not implemented")
+}
+
 func WithMaxMemoryUsageBytes(size int) readerOption {
 	panic("not implemented")
 }
