@@ -24,6 +24,22 @@ type ReaderConfig struct {
 
 type readerOption func()
 
+// WithBatchPreferCount set internal prefer count for ReadMessageBatch
+// result messages count may be smaller (when max lag timeout is end) or greater (some extra messages from last server batch)
+func WithBatchPreferCount(preferCount int) readerOption {
+	panic("not implemented")
+}
+
+// WithBatchMaxCount set maximum limit of messages in ReadMessageBatch method
+// see WithBatchPreferCount if you don't need strong up limit
+func WithBatchMaxCount(maxCount int) readerOption {
+	panic("not implemented")
+}
+
+func WithBatchMaxTimeLag(duration time.Duration) {
+	panic("not implemented")
+}
+
 func WithBaseContext(ctx context.Context) readerOption {
 	panic("not implemented")
 }

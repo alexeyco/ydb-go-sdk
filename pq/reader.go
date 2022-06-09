@@ -21,14 +21,14 @@ type Reader struct {
 	connector ReaderStreamConnector
 
 	m         sync.RWMutex
-	streamVal ReaderStream
+	streamVal *readerPump
 }
 
 func NewReader(consumer string, readSelectors []ReadSelector) *Reader {
 	panic("not implemented")
 }
 
-func (r *Reader) stream() ReaderStream {
+func (r *Reader) stream() *readerPump {
 	r.m.RLock()
 	defer r.m.RUnlock()
 
@@ -36,20 +36,20 @@ func (r *Reader) stream() ReaderStream {
 }
 
 func (r *Reader) ReadMessageBatch(context.Context, ...ReadBatchOption) (Batch, error) {
-	return Batch{}, nil
+	panic("not implemented")
 }
 
 func (r *Reader) ReadMessage(context.Context) (Message, error) {
 	return Message{}, nil
 }
 
-func (r *Reader) Commit(ctx context.Context, commits ...CommitableByOffset) error {
-	batch := make(CommitBatch, 0, len(commits))
-	batch.Append(commits...)
-	return r.CommitBatch(ctx, batch)
+func (r *Reader) CommitMessage(ctx context.Context, messages ...Message) error {
+	batch := make(CommitBatch, 0, len(messages))
+	batch.AppendMessages(messages...)
+	return r.stream().Commit(ctx, batch)
 }
 
-func (r *Reader) CommitBatch(ctx context.Context, batch CommitBatch) error {
+func (r *Reader) CommitBatch(ctx context.Context, batch Batch) error {
 	panic("not implemented")
 }
 
